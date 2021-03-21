@@ -1,0 +1,38 @@
+<%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/work_order.css" %>
+<%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/fattable.css" %>
+<%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/fattable.js" %>
+
+<div class="record-pane">
+
+  <h1>Generate a Bulk Update Spreadsheet</h1>
+
+  <% if @spreadsheet_errors %>
+    <div class="alert alert-danger">
+      <%= @spreadsheet_errors %>
+    </div>
+  <% end %>
+
+  <p>Use the form below to select the Archival Objects you wish to bulk update.</p>
+
+  <p>
+    <strong>Selected Records:</strong> <span id="selectedCount"></span>
+  </p>
+
+  <div id='work_order_table'></div>
+
+  <%= form_tag({:action => :download}, {:method => 'post', :id => "work_order_form"}) do |form| %>
+    <%= hidden_field_tag "resource", @uri %>
+    <div class="report-fields"></div>
+
+    <div class="form-group">
+      <button class="btn btn-primary submit-btn" disabled>Download Spreadsheet</button>
+      <%= link_to "Cancel", :back, :class => "btn btn-default" %>
+    </div>
+
+  <% end %>
+</div>
+
+<%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/work_order_table.js" %>
+<script>
+  initWorkOrderTable(<%= ASUtils.to_json(@tree).html_safe %>);
+</script>

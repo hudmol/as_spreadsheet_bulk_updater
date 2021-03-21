@@ -1,0 +1,15 @@
+<% if @resource && controller_name == 'resources' && ['show', 'edit'].include?(action_name) %>
+  <script type="text/template" id="spreadsheetBulkUpdateButtonTemplate">
+    <%= link_to "Download Update XLSX", {:controller => :spreadsheet_bulk_updater, :action => :download_form, :resource => @resource.uri} %>
+  </script>
+  <script>
+    $(function() {
+      $(document).on("loadedrecordform.aspace", function(event, $container) {
+          if (tree && tree.current().data('jsonmodel_type') == 'resource') {
+            $('#other-dropdown .dropdown-menu').append($('<li />').append($(AS.renderTemplate("spreadsheetBulkUpdateButtonTemplate"))));
+            $('#other-dropdown').show();
+          }
+      });
+    });
+  </script>
+<% end %>
