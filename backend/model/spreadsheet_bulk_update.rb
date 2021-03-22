@@ -14,24 +14,41 @@ class SpreadsheetBulkUpdate
   BATCH_SIZE = 200
 
   class StringColumn
-    attr_accessor :column, :label
+    attr_accessor :name, :column, :index, :jsonmodel
 
-    def initialize(label)
-      @label = label.to_s
-      @column = label
+    def initialize(jsonmodel, name, opts = {})
+      @jsonmodel = jsonmodel
+      @name = name
+      @header_label = opts.fetch(:header_label, nil)
+      @column = opts.fetch(:column, name).intern
     end
 
     def value_for(column_value)
       column_value
+    end
+
+    def header_label
+      if @header_label.nil?
+        if @index.nil?
+          @header_label = I18n.t("#{jsonmodel}.#{name}", :default => name)
+        else
+          @header_label = "#{I18n.t("#{jsonmodel}._singular")} #{index + 1} - #{I18n.t("#{jsonmodel}.#{name}", :default => name)}"
+        end
+      end
+
+      @header_label
+    end
+
+    def path
+      [jsonmodel, index, name].compact.join('/')
     end
   end
 
   class EnumColumn < StringColumn
     attr_accessor :enum_name
 
-    def initialize(label, enum_name)
-      super("#{label}_id".intern)
-      @label = label.to_s
+    def initialize(jsonmodel, name, enum_name)
+      super(jsonmodel, name, :column => "#{name}_id")
       @enum_name = enum_name
     end
 
@@ -48,24 +65,24 @@ class SpreadsheetBulkUpdate
 
   SUBRECORDS_OF_INTEREST = [:date, :extent]
   FIELDS_OF_INTEREST = {
-    :basic_information => [
-      StringColumn.new(:id),
-      StringColumn.new(:lock_version),
-      StringColumn.new(:title),
-      EnumColumn.new(:level, 'archival_record_level'),
-      BooleanColumn.new(:publish),
+    :archival_object => [
+      StringColumn.new(:archival_object, :id, :header_label => "Id"),
+      StringColumn.new(:archival_object, :lock_version, :header_label => "Version"),
+      StringColumn.new(:archival_object, :title),
+      EnumColumn.new(:archival_object, :level, 'archival_record_level'),
+      BooleanColumn.new(:archival_object, :publish),
     ],
     :date => [
-      EnumColumn.new(:date_type, 'date_type'),
-      EnumColumn.new(:label, 'date_label'),
-      StringColumn.new(:expression),
-      StringColumn.new(:begin),
-      StringColumn.new(:end),
+      EnumColumn.new(:date, :date_type, 'date_type'),
+      EnumColumn.new(:date, :label, 'date_label'),
+      StringColumn.new(:date, :expression),
+      StringColumn.new(:date, :begin),
+      StringColumn.new(:date, :end),
     ],
     :extent => [
-      EnumColumn.new(:portion, 'extent_portion'),
-      StringColumn.new(:number),
-      EnumColumn.new(:extent_type, 'extent_extent_type'),
+      EnumColumn.new(:extent, :portion, 'extent_portion'),
+      StringColumn.new(:extent, :number),
+      EnumColumn.new(:extent, :extent_type, 'extent_extent_type'),
     ],
   }
 
@@ -98,65 +115,37 @@ class SpreadsheetBulkUpdate
   end
 
   def human_readable_headers
-    headers = []
-
-    FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
-      if field.label == 'id'
-        headers << 'Id'
-      elsif field.label == 'lock_version'
-        headers << 'Version'
-      else
-        headers << I18n.t("archival_object.#{field.label}", :default => field.label)
-      end
-    end
-
-    subrecords_iterator do |subrecord, index|
-      subrecord_label = I18n.t("#{subrecord}._singular")
-      FIELDS_OF_INTEREST.fetch(subrecord).each do |field|
-        field_label = I18n.t("#{subrecord}.#{field.label}", :default => field.label)
-        headers << "#{subrecord_label} #{index + 1} #{field_label}"
-      end
-    end
-
-    headers
+    all_columns.map{|col| col.header_label}
   end
 
   def machine_readable_headers
-    headers = []
-
-    FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
-      headers << field.label
-    end
-
-    subrecords_iterator do |subrecord, index|
-      FIELDS_OF_INTEREST.fetch(subrecord).each do |field|
-        headers << "#{subrecord}/#{index}/#{field.label}"
-      end
-    end
-
-    headers
+    all_columns.map{|col| col.path}
   end
 
   def all_columns
+    return @columns if @columns
+
     result = []
 
-    FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
-      result << field
+    FIELDS_OF_INTEREST.fetch(:archival_object).each do |column|
+      result << column
     end
 
     subrecords_iterator do |subrecord, index|
-      FIELDS_OF_INTEREST.fetch(subrecord).each do |field|
-        result << field
+      FIELDS_OF_INTEREST.fetch(subrecord).each do |column|
+        column = column.clone
+        column.index = index
+        result << column
       end
     end
 
-    result
+    @columns = result
   end
 
   def dataset_iterator(&block)
     DB.open do |db|
       @ao_ids.each_slice(BATCH_SIZE) do |batch|
-        base_fields = [:id, :lock_version] + FIELDS_OF_INTEREST.fetch(:basic_information).map{|field| field.column}
+        base_fields = [:id, :lock_version] + FIELDS_OF_INTEREST.fetch(:archival_object).map{|field| field.column}
         base = ArchivalObject
                 .filter(:id => batch)
                 .select(*base_fields)
@@ -172,7 +161,7 @@ class SpreadsheetBulkUpdate
             .select(*subrecord_fields)
             .each do |row|
             subrecord_datasets[subrecord][row[:archival_object_id]] ||= []
-            subrecord_datasets[subrecord][row[:archival_object_id]] << FIELDS_OF_INTEREST.fetch(subrecord).map{|field| [field.label, field.value_for(row[field.column])]}.to_h
+            subrecord_datasets[subrecord][row[:archival_object_id]] << FIELDS_OF_INTEREST.fetch(subrecord).map{|field| [field.name, field.value_for(row[field.column])]}.to_h
           end
         end
 
@@ -187,7 +176,7 @@ class SpreadsheetBulkUpdate
           locked_column_indexes << 0
           locked_column_indexes << 1
 
-          FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
+          FIELDS_OF_INTEREST.fetch(:archival_object).each do |field|
             current_row << field.value_for(row[field.column])
           end
 
@@ -195,7 +184,7 @@ class SpreadsheetBulkUpdate
             subrecord_data = subrecord_datasets.fetch(subrecord).fetch(row[:id], []).fetch(index, nil)
             FIELDS_OF_INTEREST.fetch(subrecord).each do |field|
               if subrecord_data
-                current_row << subrecord_data.fetch(field.label, nil)
+                current_row << subrecord_data.fetch(field.name, nil)
               else
                 current_row << nil
                 locked_column_indexes << current_row.length - 1
