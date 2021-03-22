@@ -44,7 +44,7 @@ class SpreadsheetBulkUpdate
     end
   end
 
-  SUBRECORDS_OF_INTEREST = [:date]
+  SUBRECORDS_OF_INTEREST = [:date, :extent]
   FIELDS_OF_INTEREST = {
     :basic_information => [
       StringColumn.new(:title),
@@ -151,32 +151,39 @@ class SpreadsheetBulkUpdate
         end
 
         base.each do |row|
+          locked_column_indexes = []
+
           current_row = [
             row[:id],
             row[:lock_version],
           ]
+
+          locked_column_indexes << 0
+          locked_column_indexes << 1
 
           FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
             current_row << field.value_for(row[field.column])
           end
 
           subrecords_iterator do |subrecord, index|
-            subrecord_data = subrecord_datasets.fetch(subrecord).fetch(row[:id], []).fetch(index, {})
+            subrecord_data = subrecord_datasets.fetch(subrecord).fetch(row[:id], []).fetch(index, nil)
             FIELDS_OF_INTEREST.fetch(subrecord).each do |field|
-              current_row << subrecord_data.fetch(field.label, nil)
+              if subrecord_data
+                current_row << subrecord_data.fetch(field.label, nil)
+              else
+                current_row << nil
+                locked_column_indexes << current_row.length - 1
+              end
             end
           end
 
-          block.call(current_row)
+          block.call(current_row, locked_column_indexes)
         end
       end
     end
   end
 
   def to_stream
-    pp SUBRECORDS_OF_INTEREST
-    pp FIELDS_OF_INTEREST
-
     io = StringIO.new
     wb = WriteXLSX.new(io)
 
@@ -197,9 +204,11 @@ class SpreadsheetBulkUpdate
     sheet.set_row(1, nil, locked)
 
     rowidx = 2
-    dataset_iterator do |row_values|
-      sheet.write_row(rowidx, 0, row_values[0..1], locked)
-      sheet.write_row(rowidx, 2, row_values[2..-1], unlocked)
+    dataset_iterator do |row_values, locked_column_indexes|
+      row_values.each_with_index do |val, i|
+        sheet.write(rowidx, i, val, locked_column_indexes.include?(i) ? locked : unlocked)
+      end
+
       rowidx += 1
     end
 
