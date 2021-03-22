@@ -27,6 +27,8 @@ class SpreadsheetBulkUpdate
   end
 
   class EnumColumn < StringColumn
+    attr_accessor :enum_name
+
     def initialize(label, enum_name)
       super("#{label}_id".intern)
       @label = label.to_s
@@ -47,6 +49,8 @@ class SpreadsheetBulkUpdate
   SUBRECORDS_OF_INTEREST = [:date, :extent]
   FIELDS_OF_INTEREST = {
     :basic_information => [
+      StringColumn.new(:id),
+      StringColumn.new(:lock_version),
       StringColumn.new(:title),
       EnumColumn.new(:level, 'archival_record_level'),
       BooleanColumn.new(:publish),
@@ -94,10 +98,16 @@ class SpreadsheetBulkUpdate
   end
 
   def human_readable_headers
-    headers = ['ID', 'Version']
+    headers = []
 
     FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
-      headers << I18n.t("archival_object.#{field.label}", :default => field.label)
+      if field.label == 'id'
+        headers << 'Id'
+      elsif field.label == 'lock_version'
+        headers << 'Version'
+      else
+        headers << I18n.t("archival_object.#{field.label}", :default => field.label)
+      end
     end
 
     subrecords_iterator do |subrecord, index|
@@ -112,7 +122,7 @@ class SpreadsheetBulkUpdate
   end
 
   def machine_readable_headers
-    headers = ['id', 'lock_version']
+    headers = []
 
     FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
       headers << field.label
@@ -125,6 +135,22 @@ class SpreadsheetBulkUpdate
     end
 
     headers
+  end
+
+  def all_columns
+    result = []
+
+    FIELDS_OF_INTEREST.fetch(:basic_information).each do |field|
+      result << field
+    end
+
+    subrecords_iterator do |subrecord, index|
+      FIELDS_OF_INTEREST.fetch(subrecord).each do |field|
+        result << field
+      end
+    end
+
+    result
   end
 
   def dataset_iterator(&block)
@@ -210,6 +236,22 @@ class SpreadsheetBulkUpdate
       end
 
       rowidx += 1
+    end
+
+    all_columns.each_with_index do |column, col_idx|
+      if column.is_a?(EnumColumn)
+        sheet.data_validation(2, col_idx, 2 + @ao_ids.length, col_idx,
+                              {
+                                'validate' => 'list',
+                                'source' => BackendEnumSource.values_for(column.enum_name)
+                              })
+      elsif column.is_a?(BooleanColumn)
+        sheet.data_validation(2, col_idx, 2 + @ao_ids.length, col_idx,
+                              {
+                                'validate' => 'list',
+                                'source' => ['true', 'false']
+                              })
+      end
     end
 
     wb.close
