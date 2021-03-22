@@ -150,8 +150,6 @@ class SpreadsheetBulkUpdate
           end
         end
 
-        pp subrecord_datasets
-
         base.each do |row|
           current_row = [
             row[:id],
@@ -182,19 +180,26 @@ class SpreadsheetBulkUpdate
     io = StringIO.new
     wb = WriteXLSX.new(io)
 
+    # give us a `locked` and `unlocked` formatter
     locked = wb.add_format
     locked.set_locked(1)
+    unlocked = wb.add_format
+    unlocked.set_locked(0)
 
     sheet = wb.add_worksheet('Updates')
 
+    # protect the sheet to ensure `locked` formatting work
+    sheet.protect
+
     sheet.write_row(0, 0, human_readable_headers)
-    sheet.set_row(0, nil, locked)
     sheet.write_row(1, 0, machine_readable_headers)
+    sheet.set_row(0, nil, locked)
     sheet.set_row(1, nil, locked)
 
     rowidx = 2
     dataset_iterator do |row_values|
-      sheet.write_row(rowidx, 0, row_values)
+      sheet.write_row(rowidx, 0, row_values[0..1], locked)
+      sheet.write_row(rowidx, 2, row_values[2..-1], unlocked)
       rowidx += 1
     end
 
