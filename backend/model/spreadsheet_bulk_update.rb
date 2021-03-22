@@ -14,13 +14,15 @@ class SpreadsheetBulkUpdate
   BATCH_SIZE = 200
 
   class StringColumn
-    attr_accessor :name, :column, :index, :jsonmodel
+    attr_accessor :name, :column, :index, :jsonmodel, :width, :locked
 
     def initialize(jsonmodel, name, opts = {})
       @jsonmodel = jsonmodel
       @name = name
       @header_label = opts.fetch(:header_label, nil)
       @column = opts.fetch(:column, name).intern
+      @width = opts.fetch(:width, nil)
+      @locked = opts.fetch(:locked, false)
     end
 
     def value_for(column_value)
@@ -47,8 +49,8 @@ class SpreadsheetBulkUpdate
   class EnumColumn < StringColumn
     attr_accessor :enum_name
 
-    def initialize(jsonmodel, name, enum_name)
-      super(jsonmodel, name, :column => "#{name}_id")
+    def initialize(jsonmodel, name, enum_name, opts = {})
+      super(jsonmodel, name, {:column => "#{name}_id"}.merge(opts))
       @enum_name = enum_name
     end
 
@@ -66,23 +68,23 @@ class SpreadsheetBulkUpdate
   SUBRECORDS_OF_INTEREST = [:date, :extent]
   FIELDS_OF_INTEREST = {
     :archival_object => [
-      StringColumn.new(:archival_object, :id, :header_label => "Id"),
-      StringColumn.new(:archival_object, :lock_version, :header_label => "Version"),
-      StringColumn.new(:archival_object, :title),
-      EnumColumn.new(:archival_object, :level, 'archival_record_level'),
+      StringColumn.new(:archival_object, :id, :header_label => "Id", :locked => true),
+      StringColumn.new(:archival_object, :lock_version, :header_label => "Version", :locked => true),
+      StringColumn.new(:archival_object, :title, :width => 30),
+      EnumColumn.new(:archival_object, :level, 'archival_record_level', :width => 15),
       BooleanColumn.new(:archival_object, :publish),
     ],
     :date => [
       EnumColumn.new(:date, :date_type, 'date_type'),
       EnumColumn.new(:date, :label, 'date_label'),
-      StringColumn.new(:date, :expression),
-      StringColumn.new(:date, :begin),
-      StringColumn.new(:date, :end),
+      StringColumn.new(:date, :expression, :width => 15),
+      StringColumn.new(:date, :begin, :width => 10),
+      StringColumn.new(:date, :end, :width => 10),
     ],
     :extent => [
-      EnumColumn.new(:extent, :portion, 'extent_portion'),
-      StringColumn.new(:extent, :number),
-      EnumColumn.new(:extent, :extent_type, 'extent_extent_type'),
+      EnumColumn.new(:extent, :portion, 'extent_portion', :width => 15),
+      StringColumn.new(:extent, :number, :width => 15),
+      EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15),
     ],
   }
 
@@ -168,23 +170,17 @@ class SpreadsheetBulkUpdate
         base.each do |row|
           locked_column_indexes = []
 
-          current_row = [
-            row[:id],
-            row[:lock_version],
-          ]
+          current_row = []
 
-          locked_column_indexes << 0
-          locked_column_indexes << 1
+          all_columns.each_with_index do |column, index|
+            locked_column_indexes <<  index if column.locked
 
-          FIELDS_OF_INTEREST.fetch(:archival_object).each do |field|
-            current_row << field.value_for(row[field.column])
-          end
-
-          subrecords_iterator do |subrecord, index|
-            subrecord_data = subrecord_datasets.fetch(subrecord).fetch(row[:id], []).fetch(index, nil)
-            FIELDS_OF_INTEREST.fetch(subrecord).each do |field|
+            if column.jsonmodel == :archival_object
+              current_row << column.value_for(row[column.column])
+            else
+              subrecord_data = subrecord_datasets.fetch(column.jsonmodel).fetch(row[:id], []).fetch(column.index, nil)
               if subrecord_data
-                current_row << subrecord_data.fetch(field.name, nil)
+                current_row << subrecord_data.fetch(column.name, nil)
               else
                 current_row << nil
                 locked_column_indexes << current_row.length - 1
@@ -227,23 +223,44 @@ class SpreadsheetBulkUpdate
       rowidx += 1
     end
 
-    all_columns.each_with_index do |column, col_idx|
+    enum_sheet = wb.add_worksheet('Enums')
+    enum_sheet.protect
+    enum_counts_by_col = {}
+    all_columns.each_with_index do |column, col_index|
       if column.is_a?(EnumColumn)
-        sheet.data_validation(2, col_idx, 2 + @ao_ids.length, col_idx,
-                              {
-                                'validate' => 'list',
-                                'source' => BackendEnumSource.values_for(column.enum_name)
-                              })
+        enum_sheet.write(0, col_index, column.enum_name)
+        BackendEnumSource.values_for(column.enum_name).each_with_index do |enum, enum_index|
+          enum_sheet.write(enum_index+1, col_index, enum)
+        end
+        enum_counts_by_col[col_index] = BackendEnumSource.values_for(column.enum_name).length
       elsif column.is_a?(BooleanColumn)
+        enum_sheet.write(0, col_index, 'boolean')
+        enum_sheet.write(1, col_index, 'true')
+        enum_sheet.write(2, col_index, 'false')
+        enum_counts_by_col[col_index] = 2
+      end
+    end
+
+    all_columns.each_with_index do |column, col_idx|
+      if column.is_a?(EnumColumn) || column.is_a?(BooleanColumn)
         sheet.data_validation(2, col_idx, 2 + @ao_ids.length, col_idx,
                               {
                                 'validate' => 'list',
-                                'source' => ['true', 'false']
+                                'source' => "=Enums!$#{col_ref_for_index(col_idx)}$2:$#{col_ref_for_index(col_idx)}$#{enum_counts_by_col.fetch(col_idx)+1}"
                               })
+      end
+
+      if column.width
+        sheet.set_column(col_idx, col_idx, column.width)
       end
     end
 
     wb.close
     io.string
+  end
+
+  LETTERS = ('A'..'Z').to_a
+  def col_ref_for_index(index)
+    LETTERS[index]
   end
 end
