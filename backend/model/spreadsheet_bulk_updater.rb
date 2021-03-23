@@ -11,6 +11,8 @@ class SpreadsheetBulkUpdater
     updated_count = 0
     ao_ids = extract_ao_ids(filename)
 
+    column_by_path = extract_columns(filename)
+
     DB.open(true) do
       ao_ids.each_slice(BATCH_SIZE) do |batch|
         to_process = {}
@@ -34,7 +36,7 @@ class SpreadsheetBulkUpdater
 
           begin
             row.values.each do |path, value|
-              column = SpreadsheetBuilder.column_for_path(path)
+              column = column_by_path.fetch(path)
 
               if column.jsonmodel == :archival_object
                 next if column.name == :id
@@ -96,6 +98,25 @@ class SpreadsheetBulkUpdater
     }
   end
 
+  def self.extract_columns(filename)
+    path_row = nil
+
+    XLSXStreamingReader.new(filename).each(SpreadsheetBuilder::SHEET_NAME).each_with_index do |row, idx|
+      next if idx == 0
+      path_row = row_values(row)
+      break
+    end
+
+    raise "Missing header row containing paths in #{filename}" if path_row.nil?
+
+    path_row.map do |path|
+      column = SpreadsheetBuilder.column_for_path(path)
+      raise "Missing column definition for path: #{path}" if column.nil?
+
+      [path, column]
+    end.to_h
+  end
+
   def self.extract_ao_ids(filename)
     result = []
     each_row(filename) do |row|
@@ -137,10 +158,6 @@ class SpreadsheetBulkUpdater
   end
 
   Row = Struct.new(:values, :row_number) do
-    def has_heading?(column)
-      self.values.include?(column.heading)
-    end
-
     def fetch(*args)
       self.values.fetch(*args)
     end
