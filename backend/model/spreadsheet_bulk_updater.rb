@@ -34,22 +34,13 @@ class SpreadsheetBulkUpdater
 
           begin
             row.values.each do |path, value|
-              if path =~ /^([a-z-_]+)\/([0-9]+)\/(.*)$/
-                subrecord = $1
-                subrecord_index = Integer($2)
-                subrecord_field = $3
-                if to_update = ao_json[subrecord][subrecord_index]
-                  column = fetch_column_definition(subrecord.intern, subrecord_field.intern)
-                  clean_value = column.sanitise_incoming_value(value)
-                  if to_update[subrecord_field] != clean_value
-                    record_changed = true
-                    to_update[subrecord_field] = clean_value
-                  end
-                end
-              else
-                next if path == 'id'
+              column = SpreadsheetBuilder.column_for_path(path)
 
-                if path == 'lock_version'
+              if column.jsonmodel == :archival_object
+                next if column.name == :id
+
+                # Validate the lock_version
+                if column.name == :lock_version
                   if Integer(value) != ao_json['lock_version']
                     errors << {
                       sheet: SpreadsheetBuilder::SHEET_NAME,
@@ -59,11 +50,18 @@ class SpreadsheetBulkUpdater
                     }
                   end
                 else
-                  column = fetch_column_definition(:archival_object, path.intern)
                   clean_value = column.sanitise_incoming_value(value)
                   if ao_json[path] != clean_value
                     record_changed = true
                     ao_json[path] = clean_value
+                  end
+                end
+              else
+                if (subrecord_to_update = Array(ao_json[column.path_prefix]).fetch(column.index, nil))
+                  clean_value = column.sanitise_incoming_value(value)
+                  if subrecord_to_update[column.name.to_s] != clean_value
+                    record_changed = true
+                    subrecord_to_update[column.name.to_s] = clean_value
                   end
                 end
               end
@@ -96,13 +94,6 @@ class SpreadsheetBulkUpdater
     {
       updated: updated_count,
     }
-  end
-
-  def self.fetch_column_definition(path_prefix, field)
-    @column_cache ||= {}
-    @column_cache[path_prefix] ||= {}
-    @column_cache[path_prefix][field] ||= SpreadsheetBuilder::FIELDS_OF_INTEREST.values.flatten.find{|col| col.name == field && col.path_prefix == path_prefix}
-    @column_cache.fetch(path_prefix).fetch(field)
   end
 
   def self.extract_ao_ids(filename)

@@ -288,4 +288,33 @@ class SpreadsheetBuilder
   def col_ref_for_index(index)
     LETTERS[index]
   end
+
+  def self.column_for_path(path)
+    @column_cache ||= {}
+
+    return @column_cache.fetch(path) if @column_cache && @column_cache.has_key?(path)
+
+    if path =~ /^([a-z-_]+)\/([0-9]+)\/(.*)$/
+      path_prefix = $1.intern
+      index = Integer($2)
+      field = $3.intern
+
+      column = FIELDS_OF_INTEREST.values.flatten.find{|col| col.name == field && col.path_prefix == path_prefix}
+
+      raise "Column definition not found for #{path}" if column.nil?
+
+      column = column.clone
+      column.index = index
+
+      @column_cache[path] = column
+    else
+      column = FIELDS_OF_INTEREST.fetch(:archival_object).find{|col| col.name == path.intern}
+
+      raise "Column definition not found for #{path}" if column.nil?
+
+      @column_cache[path] = column.clone
+    end
+
+    @column_cache[path]
+  end
 end
