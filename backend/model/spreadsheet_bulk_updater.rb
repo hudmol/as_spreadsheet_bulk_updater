@@ -23,10 +23,13 @@ class SpreadsheetBulkUpdater
         ao_objs.zip(ao_jsons).each do |ao, ao_json|
           record_changed = false
           row = to_process.fetch(ao.id)
+          last_column = nil
 
           begin
             row.values.each do |path, value|
               column = column_by_path.fetch(path)
+
+              last_column = column
 
               if column.jsonmodel == :archival_object
                 next if column.name == :id
@@ -36,7 +39,7 @@ class SpreadsheetBulkUpdater
                   if Integer(value) != ao_json['lock_version']
                     errors << {
                       sheet: SpreadsheetBuilder::SHEET_NAME,
-                      json_property: path,
+                      column: column.path,
                       row: row.row_number,
                       errors: ["Versions are out sync: #{value} record is now: #{ao_json['lock_version']}"]
                     }
@@ -69,7 +72,7 @@ class SpreadsheetBulkUpdater
             validation_errors.errors.each do |json_property, messages|
               errors << {
                 sheet: SpreadsheetBuilder::SHEET_NAME,
-                json_property: json_property,
+                column: last_column ? last_column.path : json_property,
                 row: row.row_number,
                 errors: messages,
               }
