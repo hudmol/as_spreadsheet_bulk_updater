@@ -214,20 +214,29 @@ class SpreadsheetBuilder
     io = StringIO.new
     wb = WriteXLSX.new(io)
 
-    # give us a `locked` and `unlocked` formatter
+    # give us `locked` and `unlocked` formatters
     locked = wb.add_format
     locked.set_locked(1)
+    locked.set_color('gray')
+    locked.set_size(8)
     unlocked = wb.add_format
     unlocked.set_locked(0)
 
+    # and a special one for the human headers row
+    human_header_format = wb.add_format
+    human_header_format.set_locked(1)
+    human_header_format.set_bold
+    human_header_format.set_size(12)
+
     sheet = wb.add_worksheet(SHEET_NAME)
+    sheet.freeze_panes(1,3)
 
     # protect the sheet to ensure `locked` formatting work
     sheet.protect
 
     sheet.write_row(0, 0, human_readable_headers)
     sheet.write_row(1, 0, machine_readable_headers)
-    sheet.set_row(0, nil, locked)
+    sheet.set_row(0, nil, human_header_format)
     sheet.set_row(1, nil, locked)
 
     rowidx = 2
