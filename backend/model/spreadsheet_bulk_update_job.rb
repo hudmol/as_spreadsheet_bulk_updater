@@ -15,9 +15,15 @@ class SpreadSheetBulkUpdateJob < JobRunner
                             :repo_id => job.repo_id) do
           summary = SpreadsheetBulkUpdater.run(input_file.full_file_path, job)
 
-          job.write_output("\nSuccess!  %d record(s) were updated" % [
+          job.write_output("\nSuccess! %d record(s) were updated" % [
                              summary[:updated]
                            ])
+
+          ## FIXME if bug is ever fixed upstream!
+          # This is a work around as Job#record_modified_uris is not exposed
+          # anywhere! So instead, we use record_created_uris just to get things
+          # showing up.
+          job.record_created_uris(Array(summary[:updated_uris]))
 
           job.job_blob = ASUtils.to_json(summary)
           job.save

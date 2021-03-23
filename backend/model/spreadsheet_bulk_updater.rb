@@ -8,30 +8,20 @@ class SpreadsheetBulkUpdater
     check_sheet(filename)
     errors = []
 
-    updated_count = 0
-    ao_ids = extract_ao_ids(filename)
+    updated_uris = []
+    # ao_ids = extract_ao_ids(filename)
 
     column_by_path = extract_columns(filename)
 
     DB.open(true) do
-      ao_ids.each_slice(BATCH_SIZE) do |batch|
-        to_process = {}
-        each_row(filename) do |row, idx|
-          next if row.empty?
+      batch_rows(filename) do |batch|
+        to_process = batch.map{|row| [Integer(row.fetch('id')), row]}.to_h
 
-          ao_id = Integer(row.fetch('id'))
-
-          next unless batch.include?(ao_id)
-
-          to_process[ao_id] = row
-        end
-
-        ao_objs = batch.map {|id| ArchivalObject[id]}
+        ao_objs = ArchivalObject.filter(:id => to_process.keys).all
         ao_jsons = ArchivalObject.sequel_to_jsonmodel(ao_objs)
 
         ao_objs.zip(ao_jsons).each do |ao, ao_json|
           record_changed = false
-
           row = to_process.fetch(ao.id)
 
           begin
@@ -73,7 +63,7 @@ class SpreadsheetBulkUpdater
               ao_json['position'] = nil
               ao.update_from_json(ao_json)
               job.write_output("Updated archival object #{ao.id} - #{ao_json.display_string}")
-              updated_count += 1
+              updated_uris << ao_json['uri']
             end
           rescue JSONModel::ValidationException => validation_errors
             validation_errors.errors.each do |json_property, messages|
@@ -94,7 +84,8 @@ class SpreadsheetBulkUpdater
     end
 
     {
-      updated: updated_count,
+      updated: updated_uris.length,
+      updated_uris: updated_uris,
     }
   end
 
@@ -130,10 +121,16 @@ class SpreadsheetBulkUpdater
     pp "TODO something clever"
   end
 
-  def self.each_row(filename, sheet_specifier = SpreadsheetBuilder::SHEET_NAME)
+  def self.batch_rows(filename)
+    to_enum(:each_row, filename).each_slice(BATCH_SIZE) do |batch|
+      yield batch
+    end
+  end
+
+  def self.each_row(filename)
     headers = nil
 
-    XLSXStreamingReader.new(filename).each(sheet_specifier).each_with_index do |row, idx|
+    XLSXStreamingReader.new(filename).each(SpreadsheetBuilder::SHEET_NAME).each_with_index do |row, idx|
       if idx == 0
         # header label row is ignored
         next
