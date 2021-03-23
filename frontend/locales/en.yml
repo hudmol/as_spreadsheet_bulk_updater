@@ -1,0 +1,7 @@
+en:
+  spreadsheet_bulk_update_job:
+    _singular: Spreadsheet Bulk Update Job
+
+  job:
+    types:
+      spreadsheet_bulk_update_job: Spreadsheet Bulk Update Job

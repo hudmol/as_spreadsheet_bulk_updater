@@ -1,6 +1,6 @@
 require 'write_xlsx'
 
-class SpreadsheetBulkUpdate
+class SpreadsheetBuilder
 
   def initialize(resource_uri, ao_uris)
     @resource_uri = resource_uri

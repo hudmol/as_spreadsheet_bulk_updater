@@ -1,6 +1,6 @@
 <% if @resource && controller_name == 'resources' && ['show', 'edit'].include?(action_name) %>
   <script type="text/template" id="spreadsheetBulkUpdateButtonTemplate">
-    <%= link_to "Download Update XLSX", {:controller => :spreadsheet_bulk_updater, :action => :download_form, :resource => @resource.uri} %>
+    <%= link_to "Bulk Update Spreadsheet", {:controller => :spreadsheet_bulk_updater, :action => :download_form, :resource => @resource.uri} %>
   </script>
   <script>
     $(function() {

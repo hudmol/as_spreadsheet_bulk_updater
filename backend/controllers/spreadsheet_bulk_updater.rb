@@ -8,15 +8,15 @@ class ArchivesSpaceService < Sinatra::Base
     .permissions([:view_repository])
     .returns([200, "spreadsheet"]) \
   do
-    spreadsheet = SpreadsheetBulkUpdate.new(params[:resource_uri], params[:uri])
+    builder = SpreadsheetBuilder.new(params[:resource_uri], params[:uri])
 
     [
       200,
       {
         "Content-Type" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition" => "attachment; filename=\"#{spreadsheet.build_filename}\""
+        "Content-Disposition" => "attachment; filename=\"#{builder.build_filename}\""
       },
-      spreadsheet.to_stream
+      builder.to_stream
     ]
   end
 
