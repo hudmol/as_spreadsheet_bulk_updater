@@ -13,7 +13,7 @@ class SpreadSheetBulkUpdateJob < JobRunner
         RequestContext.open(:current_username => job.owner.username,
                             :inside_bulk_update => true,
                             :repo_id => job.repo_id) do
-          summary = SpreadsheetBulkUpdater.run(input_file.file_path, job)
+          summary = SpreadsheetBulkUpdater.run(input_file.full_file_path, job)
 
           job.write_output("\nSuccess!  %d record(s) were updated" % [
                              summary[:updated]
@@ -26,7 +26,8 @@ class SpreadSheetBulkUpdateJob < JobRunner
           self.success!
         end
       rescue SpreadsheetBulkUpdater::SpreadsheetBulkUpdateFailed => e
-        job.write_output("Errors encountered during processing\n\n")
+        job.write_output("\n\n!!! Errors encountered during processing !!!")
+        job.write_output("\nAll changes have been reverted.\n\n")
 
         e.errors.each_with_index do |error, idx|
           if idx > 0
@@ -38,7 +39,8 @@ class SpreadSheetBulkUpdateJob < JobRunner
 
           job.write_output("Sheet name: #{error.fetch(:sheet)}")
           job.write_output("Row number: #{error.fetch(:row)}")
-          job.write_output("Column: #{error.fetch(:column)}")
+          job.write_output("Column: #{error.fetch(:column, 'N/A')}")
+          job.write_output("Path: #{error.fetch(:json_property, 'N/A')}")
           job.write_output("Errors: " + formatted_errors)
         end
 

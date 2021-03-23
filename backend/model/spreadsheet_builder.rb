@@ -12,9 +12,10 @@ class SpreadsheetBuilder
   end
 
   BATCH_SIZE = 200
+  SHEET_NAME = 'Updates'
 
   class StringColumn
-    attr_accessor :name, :column, :index, :jsonmodel, :width, :locked
+    attr_accessor :name, :column, :index, :jsonmodel, :width, :locked, :path_prefix
 
     def initialize(jsonmodel, name, opts = {})
       @jsonmodel = jsonmodel
@@ -23,6 +24,7 @@ class SpreadsheetBuilder
       @column = opts.fetch(:column, name).intern
       @width = opts.fetch(:width, nil)
       @locked = opts.fetch(:locked, false)
+      @path_prefix = opts.fetch(:path, jsonmodel)
     end
 
     def value_for(column_value)
@@ -42,7 +44,15 @@ class SpreadsheetBuilder
     end
 
     def path
-      [jsonmodel, index, name].compact.join('/')
+      if jsonmodel == :archival_object
+        name.to_s
+      else
+        [@path_prefix, index, name].join('/')
+      end
+    end
+
+    def sanitise_incoming_value(value)
+      value
     end
   end
 
@@ -63,6 +73,10 @@ class SpreadsheetBuilder
     def value_for(column_value)
       (column_value == 1).to_s
     end
+
+    def sanitise_incoming_value(value)
+      value == 'true'
+    end
   end
 
   SUBRECORDS_OF_INTEREST = [:date, :extent]
@@ -75,16 +89,16 @@ class SpreadsheetBuilder
       BooleanColumn.new(:archival_object, :publish),
     ],
     :date => [
-      EnumColumn.new(:date, :date_type, 'date_type'),
-      EnumColumn.new(:date, :label, 'date_label'),
-      StringColumn.new(:date, :expression, :width => 15),
-      StringColumn.new(:date, :begin, :width => 10),
-      StringColumn.new(:date, :end, :width => 10),
+      EnumColumn.new(:date, :date_type, 'date_type', :path => :dates),
+      EnumColumn.new(:date, :label, 'date_label', :path => :dates),
+      StringColumn.new(:date, :expression, :width => 15, :path => :dates),
+      StringColumn.new(:date, :begin, :width => 10, :path => :dates),
+      StringColumn.new(:date, :end, :width => 10, :path => :dates),
     ],
     :extent => [
-      EnumColumn.new(:extent, :portion, 'extent_portion', :width => 15),
-      StringColumn.new(:extent, :number, :width => 15),
-      EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15),
+      EnumColumn.new(:extent, :portion, 'extent_portion', :width => 15, :path => :extents),
+      StringColumn.new(:extent, :number, :width => 15, :path => :extents),
+      EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15, :path => :extents),
     ],
   }
 
@@ -176,13 +190,13 @@ class SpreadsheetBuilder
             locked_column_indexes <<  index if column.locked
 
             if column.jsonmodel == :archival_object
-              current_row << column.value_for(row[column.column])
+              current_row << ColumnAndValue.new(column.value_for(row[column.column]), column)
             else
               subrecord_data = subrecord_datasets.fetch(column.jsonmodel).fetch(row[:id], []).fetch(column.index, nil)
               if subrecord_data
-                current_row << subrecord_data.fetch(column.name, nil)
+                current_row << ColumnAndValue.new(subrecord_data.fetch(column.name, nil), column)
               else
-                current_row << nil
+                current_row << ColumnAndValue.new(nil, column)
                 locked_column_indexes << current_row.length - 1
               end
             end
@@ -194,6 +208,8 @@ class SpreadsheetBuilder
     end
   end
 
+  ColumnAndValue = Struct.new(:value, :column)
+
   def to_stream
     io = StringIO.new
     wb = WriteXLSX.new(io)
@@ -204,7 +220,7 @@ class SpreadsheetBuilder
     unlocked = wb.add_format
     unlocked.set_locked(0)
 
-    sheet = wb.add_worksheet('Updates')
+    sheet = wb.add_worksheet(SHEET_NAME)
 
     # protect the sheet to ensure `locked` formatting work
     sheet.protect
@@ -216,8 +232,8 @@ class SpreadsheetBuilder
 
     rowidx = 2
     dataset_iterator do |row_values, locked_column_indexes|
-      row_values.each_with_index do |val, i|
-        sheet.write(rowidx, i, val, locked_column_indexes.include?(i) ? locked : unlocked)
+      row_values.each_with_index do |columnAndValue, i|
+        sheet.write(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
       end
 
       rowidx += 1
