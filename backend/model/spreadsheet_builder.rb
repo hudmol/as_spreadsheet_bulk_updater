@@ -86,19 +86,18 @@ class SpreadsheetBuilder
       StringColumn.new(:archival_object, :lock_version, :header_label => "Version", :locked => true),
       StringColumn.new(:archival_object, :title, :width => 30),
       EnumColumn.new(:archival_object, :level, 'archival_record_level', :width => 15),
-      BooleanColumn.new(:archival_object, :publish),
     ],
     :date => [
-      EnumColumn.new(:date, :date_type, 'date_type', :path => :dates),
-      EnumColumn.new(:date, :label, 'date_label', :path => :dates),
       StringColumn.new(:date, :expression, :width => 15, :path => :dates),
       StringColumn.new(:date, :begin, :width => 10, :path => :dates),
       StringColumn.new(:date, :end, :width => 10, :path => :dates),
+      EnumColumn.new(:date, :certainty, 'date_certainty', :path => :dates),
     ],
     :extent => [
       EnumColumn.new(:extent, :portion, 'extent_portion', :width => 15, :path => :extents),
       StringColumn.new(:extent, :number, :width => 15, :path => :extents),
       EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15, :path => :extents),
+      StringColumn.new(:extent, :container_summary, :width => 20, :path => :extents),
     ],
   }
 
@@ -271,7 +270,7 @@ class SpreadsheetBuilder
         sheet.data_validation(2, col_idx, 2 + @ao_ids.length, col_idx,
                               {
                                 'validate' => 'list',
-                                'source' => "=Enums!$#{col_ref_for_index(col_idx)}$2:$#{col_ref_for_index(col_idx)}$#{enum_counts_by_col.fetch(col_idx)+1}"
+                                'source' => "=Enums!$#{index_to_col_reference(col_idx)}$2:$#{index_to_col_reference(col_idx)}$#{enum_counts_by_col.fetch(col_idx)+1}"
                               })
       end
 
@@ -285,8 +284,14 @@ class SpreadsheetBuilder
   end
 
   LETTERS = ('A'..'Z').to_a
-  def col_ref_for_index(index)
-    LETTERS[index]
+
+  # Note: zero-bosed index!
+  def index_to_col_reference(n)
+    if n < 26
+      LETTERS.fetch(n)
+    else
+      index_to_col_reference((n / 26) - 1) + index_to_col_reference(n % 26)
+    end
   end
 
   def self.column_for_path(path)
