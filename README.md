@@ -12,7 +12,7 @@ a series of changes to those archival objects and the fields presented.  Once
 prepared, the spreadsheet can be applied via a new background job.
 
 To download the spreadsheet there is now a "Bulk Update Spreadsheet" menu item
-available on the resource view or edit page menu (under the "Other" menu). You
+available on the resource view or edit page menu (under the "More" menu). You
 will be required to select the archival objects to be included in the
 spreadsheet and can download the XLSX from this form.
 
