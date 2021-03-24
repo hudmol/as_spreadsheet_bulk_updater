@@ -51,6 +51,20 @@ class SpreadsheetBulkUpdater
                     ao_json[path] = clean_value
                   end
                 end
+              elsif column.jsonmodel == :note
+                all_text_subnotes = ao_json.notes
+                                     .select{|note| note['jsonmodel_type'] == 'note_multipart' && note['type'] == column.name.to_s}
+                                     .map{|note| note['subnotes']}
+                                     .flatten
+                                     .select{|subnote| subnote['jsonmodel_type'] == 'note_text'}
+
+                if (subnote_to_update = all_text_subnotes.fetch(column.index, nil))
+                  clean_value = column.sanitise_incoming_value(value)
+                  if subnote_to_update['content'] != clean_value
+                    record_changed = true
+                    subnote_to_update['content'] = clean_value
+                  end
+                end
               else
                 if (subrecord_to_update = Array(ao_json[column.path_prefix]).fetch(column.index, nil))
                   clean_value = column.sanitise_incoming_value(value)
