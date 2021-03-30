@@ -251,7 +251,7 @@ class SpreadsheetBuilder
             if column.jsonmodel == :archival_object
               current_row << ColumnAndValue.new(column.value_for(row[column.column]), column)
             elsif column.is_a?(NoteContentColumn)
-              note_content = subrecord_datasets.fetch(column.name).fetch(row[:id], []).fetch(column.index, nil)
+              note_content = subrecord_datasets.fetch(column.name, {}).fetch(row[:id], []).fetch(column.index, nil)
               if note_content
                 current_row << ColumnAndValue.new(note_content, column)
               else
