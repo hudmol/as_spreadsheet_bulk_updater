@@ -131,9 +131,11 @@ class SpreadsheetBuilder
                  .filter(:archival_object_id => @ao_ids)
                  .filter(Sequel.like(:notes, '%"type":"'+note_type.to_s+'"%'))
                  .group(:archival_object_id)
-                 .select(Sequel.lit("CAST(sum(CAST((LENGTH(notes) - LENGTH(REPLACE(notes, '#{text_string}', ''))) / #{text_string.length} as int)) as int) as count"))
+                 .select(Sequel.lit("CAST(SUM(CAST(((LENGTH(`notes`) - LENGTH(REPLACE(`notes`, '#{text_string}', ''))) / #{text_string.length}) AS int)) AS int) AS count"))
                  .from_self
-                 .select(Sequel.lit("max(count) as max"))
+                 .select(Sequel.lit("MAX(count) AS max"))
+
+        pp query.sql
 
         results[note_type] = (query.first || {})[:max] || 0
       end
