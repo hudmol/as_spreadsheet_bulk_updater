@@ -4,13 +4,6 @@ class SpreadsheetBulkUpdater
 
   BATCH_SIZE = 128
 
-  SUBRECORD_DEFAULTS = {
-    :date => {
-      'date_type' => 'inclusive',
-      'label' => 'creation',
-    },
-  }
-
   def self.run(filename, job)
     check_sheet(filename)
     errors = []
@@ -31,9 +24,6 @@ class SpreadsheetBulkUpdater
           record_changed = false
           row = to_process.fetch(ao.id)
           last_column = nil
-
-          subrecord_by_index = {}
-          all_text_subnotes_by_type = {}
 
           begin
             row.values.each do |path, value|
@@ -62,68 +52,27 @@ class SpreadsheetBulkUpdater
                   end
                 end
               elsif column.jsonmodel == :note
-                unless all_text_subnotes_by_type.has_key?(column.name)
-                  all_text_subnotes = ao_json.notes
-                                       .select{|note| note['jsonmodel_type'] == 'note_multipart' && note['type'] == column.name.to_s}
-                                       .map{|note| note['subnotes']}
-                                       .flatten
-                                       .select{|subnote| subnote['jsonmodel_type'] == 'note_text'}
+                all_text_subnotes = ao_json.notes
+                                     .select{|note| note['jsonmodel_type'] == 'note_multipart' && note['type'] == column.name.to_s}
+                                     .map{|note| note['subnotes']}
+                                     .flatten
+                                     .select{|subnote| subnote['jsonmodel_type'] == 'note_text'}
 
-                  all_text_subnotes_by_type[column.name] = all_text_subnotes
-                end
-
-                clean_value = column.sanitise_incoming_value(value)
-
-                if (subnote_to_update = all_text_subnotes_by_type[column.name].fetch(column.index, nil))
+                if (subnote_to_update = all_text_subnotes.fetch(column.index, nil))
+                  clean_value = column.sanitise_incoming_value(value)
                   if subnote_to_update['content'] != clean_value
                     record_changed = true
                     subnote_to_update['content'] = clean_value
                   end
-                elsif clean_value != nil && clean_value != ''
-                  record_changed = true
-                  sub_note = {
-                    'jsonmodel_type' => 'note_text',
-                    'content' => clean_value
-                  }.merge(SUBRECORD_DEFAULTS.fetch(:note_text, {}))
-
-                  ao_json.notes << {
-                    'jsonmodel_type' => 'note_multipart',
-                    'type' => column.name.to_s,
-                    'subnotes' => [sub_note],
-                  }.merge(SUBRECORD_DEFAULTS.fetch(column.jsonmodel, {}))
-
-                  all_text_subnotes_by_type[column.name] << sub_note
-                else
-                  # FIXME maybe a delete?
                 end
               else
-                clean_value = column.sanitise_incoming_value(value)
-
-                subrecord_by_index[column.path_prefix] ||= Array(ao_json[column.path_prefix]).each_with_index.map{|subrecord, index| [index, subrecord]}.to_h
-
-                if (subrecord_to_update = subrecord_by_index.fetch(column.path_prefix).fetch(column.index, nil))
+                if (subrecord_to_update = Array(ao_json[column.path_prefix]).fetch(column.index, nil))
+                  clean_value = column.sanitise_incoming_value(value)
                   if subrecord_to_update[column.name.to_s] != clean_value
                     record_changed = true
                     subrecord_to_update[column.name.to_s] = clean_value
                   end
-                elsif clean_value != nil && clean_value != ''
-                  record_changed = true
-                  subrecord_by_index.fetch(column.path_prefix)[column.index] = {
-                    'jsonmodel_type' => column.jsonmodel.to_s,
-                    column.name.to_s => clean_value,
-                  }.merge(SUBRECORD_DEFAULTS.fetch(column.jsonmodel, {}))
-                else
-                  # FIXME maybe a delete?
                 end
-              end
-            end
-
-            # apply subrecords to the json, drop nils
-            subrecord_by_index.keys.each do |path|
-              ao_json[path] = []
-              subrecord_by_index[path].each do |_, subrecord|
-                next if subrecord.nil?
-                ao_json[path] << subrecord
               end
             end
 
