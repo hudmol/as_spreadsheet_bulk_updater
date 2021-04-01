@@ -118,13 +118,10 @@ class SpreadsheetBuilder
 
     DB.open do |db|
       SUBRECORDS_OF_INTEREST.each do |subrecord|
-        max = db[subrecord]
-                .filter(:archival_object_id => @ao_ids)
-                .group_and_count(:archival_object_id)
-                .max(:count) || 0
-
-        # Notes, Extent: At least 3 more than the max
-        results[subrecord] = max + 3
+        results[subrecord] = db[subrecord]
+                               .filter(:archival_object_id => @ao_ids)
+                               .group_and_count(:archival_object_id)
+                               .max(:count) || 0
       end
 
       MULTIPART_NOTES_OF_INTEREST.each do |note_type|
@@ -140,10 +137,7 @@ class SpreadsheetBuilder
 
         pp query.sql
 
-        max = (query.first || {})[:max] || 0
-
-        # Notes: At least 2 of each type
-        results[note_type] = [max, 2].max
+        results[note_type] = (query.first || {})[:max] || 0
       end
     end
 
@@ -264,6 +258,7 @@ class SpreadsheetBuilder
                 current_row << ColumnAndValue.new(note_content, column)
               else
                 current_row << ColumnAndValue.new(nil, column)
+                locked_column_indexes << current_row.length - 1
               end
             else
               subrecord_data = subrecord_datasets.fetch(column.jsonmodel).fetch(row[:id], []).fetch(column.index, nil)
@@ -271,6 +266,7 @@ class SpreadsheetBuilder
                 current_row << ColumnAndValue.new(subrecord_data.fetch(column.name, nil), column)
               else
                 current_row << ColumnAndValue.new(nil, column)
+                locked_column_indexes << current_row.length - 1
               end
             end
           end
