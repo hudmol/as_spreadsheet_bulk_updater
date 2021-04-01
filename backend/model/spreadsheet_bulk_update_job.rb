@@ -52,6 +52,8 @@ class SpreadSheetBulkUpdateJob < JobRunner
         job.write_output("\n\nPlease correct any issues with your import spreadsheet and retry.\n")
 
         job.finish!(:failed)
+
+        raise e
       rescue => e
         Log.exception(e)
         job.write_output("Unexpected failure while running job.  Error: #{e}")
