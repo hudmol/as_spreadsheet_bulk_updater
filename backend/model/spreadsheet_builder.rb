@@ -138,8 +138,6 @@ class SpreadsheetBuilder
                  .from_self
                  .select(Sequel.lit("MAX(count) AS max"))
 
-        pp query.sql
-
         max = (query.first || {})[:max] || 0
 
         # Notes: At least 2 of each type
