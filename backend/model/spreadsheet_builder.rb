@@ -5,8 +5,16 @@ class SpreadsheetBuilder
   def initialize(resource_uri, ao_uris)
     @resource_uri = resource_uri
     @resource_id = JSONModel.parse_reference(@resource_uri).fetch(:id)
-    @ao_uris = ao_uris
-    @ao_ids = ao_uris.map{|uri| JSONModel.parse_reference(uri).fetch(:id)}
+    @ao_uris = []
+    @ao_ids = []
+
+    ao_uris.each do |uri|
+      parsed = JSONModel.parse_reference(uri)
+      if parsed[:type] == 'archival_object'
+        @ao_uris << uri
+        @ao_ids << parsed.fetch(:id)
+      end
+    end
 
     @max_subrecord_counts = calculate_max_subrecords
   end
