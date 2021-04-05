@@ -6,7 +6,6 @@ class SpreadsheetBulkUpdater
 
   SUBRECORD_DEFAULTS = {
     'dates' => {
-      'date_type' => 'inclusive',
       'label' => 'creation',
     },
   }
@@ -97,28 +96,28 @@ class SpreadsheetBulkUpdater
                 elsif !clean_value.to_s.empty?
                   record_changed = true
 
-                  sub_note = {
+                  sub_note = SUBRECORD_DEFAULTS.fetch('note_text', {}).merge({
                     'jsonmodel_type' => 'note_text',
                     'content' => clean_value
-                  }.merge(SUBRECORD_DEFAULTS.fetch(:note_text, {}))
+                  })
 
-                  ao_json.notes << {
+                  ao_json.notes << SUBRECORD_DEFAULTS.fetch(column.jsonmodel.to_s, {}).merge({
                     'jsonmodel_type' => 'note_multipart',
                     'type' => column.name.to_s,
                     'subnotes' => [sub_note],
-                  }.merge(SUBRECORD_DEFAULTS.fetch(column.jsonmodel, {}))
+                  })
 
                   all_text_subnotes_by_type[column.name] << sub_note
                 end
 
               # subrecords
               elsif SpreadsheetBuilder::SUBRECORDS_OF_INTEREST.include?(column.jsonmodel)
-                subrecord_updates_by_index[column.path_prefix] ||= {}
+                subrecord_updates_by_index[column.property_name] ||= {}
 
                 clean_value = column.sanitise_incoming_value(value)
 
-                subrecord_updates_by_index[column.path_prefix][column.index] ||= {}
-                subrecord_updates_by_index[column.path_prefix][column.index][column.name.to_s] = clean_value
+                subrecord_updates_by_index[column.property_name][column.index] ||= {}
+                subrecord_updates_by_index[column.property_name][column.index][column.name.to_s] = clean_value
               end
             end
 

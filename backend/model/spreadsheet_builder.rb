@@ -23,7 +23,7 @@ class SpreadsheetBuilder
   SHEET_NAME = 'Updates'
 
   class StringColumn
-    attr_accessor :name, :column, :index, :jsonmodel, :width, :locked, :path_prefix
+    attr_accessor :name, :column, :index, :jsonmodel, :width, :locked, :property_name
 
     def initialize(jsonmodel, name, opts = {})
       @jsonmodel = jsonmodel
@@ -32,7 +32,7 @@ class SpreadsheetBuilder
       @column = opts.fetch(:column, name).intern
       @width = opts.fetch(:width, nil)
       @locked = opts.fetch(:locked, false)
-      @path_prefix = opts.fetch(:path, jsonmodel)
+      @property_name = opts.fetch(:property_name, jsonmodel).to_s
     end
 
     def value_for(column_value)
@@ -55,7 +55,7 @@ class SpreadsheetBuilder
       if jsonmodel == :archival_object
         name.to_s
       else
-        [@path_prefix, index, name].join('/')
+        [@property_name, index, name].join('/')
       end
     end
 
@@ -106,16 +106,17 @@ class SpreadsheetBuilder
       EnumColumn.new(:archival_object, :level, 'archival_record_level', :width => 15),
     ],
     :date => [
-      StringColumn.new(:date, :expression, :width => 15, :path => :dates),
-      StringColumn.new(:date, :begin, :width => 10, :path => :dates),
-      StringColumn.new(:date, :end, :width => 10, :path => :dates),
-      EnumColumn.new(:date, :certainty, 'date_certainty', :path => :dates),
+      EnumColumn.new(:date, :date_type, 'date_type', :property_name => :dates),
+      StringColumn.new(:date, :expression, :width => 15, :property_name => :dates),
+      StringColumn.new(:date, :begin, :width => 10, :property_name => :dates),
+      StringColumn.new(:date, :end, :width => 10, :property_name => :dates),
+      EnumColumn.new(:date, :certainty, 'date_certainty', :property_name => :dates),
     ],
     :extent => [
-      EnumColumn.new(:extent, :portion, 'extent_portion', :width => 15, :path => :extents),
-      StringColumn.new(:extent, :number, :width => 15, :path => :extents),
-      EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15, :path => :extents),
-      StringColumn.new(:extent, :container_summary, :width => 20, :path => :extents),
+      EnumColumn.new(:extent, :portion, 'extent_portion', :width => 15, :property_name => :extents),
+      StringColumn.new(:extent, :number, :width => 15, :property_name => :extents),
+      EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15, :property_name => :extents),
+      StringColumn.new(:extent, :container_summary, :width => 20, :property_name => :extents),
     ],
   }
   # Conditions of Access, Scope and Contents, Bio/Hist note
@@ -311,7 +312,13 @@ class SpreadsheetBuilder
     sheet.freeze_panes(1,3)
 
     # protect the sheet to ensure `locked` formatting work
-    sheet.protect
+    # and allow a few other basic formatting things
+    sheet.protect(nil, {
+        :format_columns => true,
+        :format_rows => true,
+        :sort => true,
+      }
+    )
 
     sheet.write_row(0, 0, human_readable_headers)
     sheet.write_row(1, 0, machine_readable_headers)
@@ -376,11 +383,11 @@ class SpreadsheetBuilder
 
   def self.column_for_path(path)
     if path =~ /^([a-z-_]+)\/([0-9]+)\/(.*)$/
-      path_prefix = $1.intern
+      property_name = $1.intern
       index = Integer($2)
       field = $3.intern
 
-      column = FIELDS_OF_INTEREST.values.flatten.find{|col| col.name == field && col.path_prefix == path_prefix}
+      column = FIELDS_OF_INTEREST.values.flatten.find{|col| col.name.intern == field && col.property_name.intern == property_name}
 
       raise "Column definition not found for #{path}" if column.nil?
 
