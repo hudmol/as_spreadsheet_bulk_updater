@@ -193,7 +193,6 @@ class SpreadsheetBulkUpdater
               errors << {
                 sheet: SpreadsheetBuilder::SHEET_NAME,
                 json_property: json_property,
-                column: "FIXME map from #{json_property}",
                 row: row.row_number,
                 errors: messages,
               }
@@ -242,8 +241,26 @@ class SpreadsheetBulkUpdater
   end
 
   def self.check_sheet(filename)
-    # FIXME validations?
-    #  - maybe check all ids exist? and belong to resource?
+    errors = []
+
+    ao_ids = extract_ao_ids(filename)
+    existing_ao_ids = ArchivalObject
+                        .filter(:id => ao_ids)
+                        .select(:id)
+                        .map{|row| row[:id]}
+
+    (ao_ids - existing_ao_ids).each do |missing_id|
+      errors << {
+        sheet: SpreadsheetBuilder::SHEET_NAME,
+        row: 'N/A',
+        column: 'id',
+        errors: ["Archival Object not found for id: #{missing_id}"]
+      }
+    end
+
+    if errors.length > 0
+      raise SpreadsheetBulkUpdateFailed.new(errors)
+    end
   end
 
   def self.batch_rows(filename)
