@@ -46,6 +46,7 @@ class SpreadSheetBulkUpdateJob < JobRunner
           job.write_output("Sheet name: #{error.fetch(:sheet)}")
           job.write_output("Row number: #{error.fetch(:row)}")
           job.write_output("Column: #{error.fetch(:column, 'N/A')}")
+          job.write_output("JSONModel Property: #{error.fetch(:json_property, 'N/A')}")
           job.write_output("Errors: " + formatted_errors)
         end
 

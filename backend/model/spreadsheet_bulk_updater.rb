@@ -5,7 +5,7 @@ class SpreadsheetBulkUpdater
   BATCH_SIZE = 128
 
   SUBRECORD_DEFAULTS = {
-    :date => {
+    'dates' => {
       'date_type' => 'inclusive',
       'label' => 'creation',
     },
@@ -16,7 +16,6 @@ class SpreadsheetBulkUpdater
     errors = []
 
     updated_uris = []
-    # ao_ids = extract_ao_ids(filename)
 
     column_by_path = extract_columns(filename)
 
@@ -32,7 +31,8 @@ class SpreadsheetBulkUpdater
           row = to_process.fetch(ao.id)
           last_column = nil
 
-          subrecord_by_index = {}
+          subrecord_updates_by_index = {}
+
           all_text_subnotes_by_type = {}
 
           begin
@@ -41,6 +41,7 @@ class SpreadsheetBulkUpdater
 
               last_column = column
 
+              # fields on the AO
               if column.jsonmodel == :archival_object
                 next if column.name == :id
 
@@ -56,11 +57,14 @@ class SpreadsheetBulkUpdater
                   end
                 else
                   clean_value = column.sanitise_incoming_value(value)
+
                   if ao_json[path] != clean_value
                     record_changed = true
                     ao_json[path] = clean_value
                   end
                 end
+
+              # notes
               elsif column.jsonmodel == :note
                 unless all_text_subnotes_by_type.has_key?(column.name)
                   all_text_subnotes = ao_json.notes
@@ -77,10 +81,22 @@ class SpreadsheetBulkUpdater
                 if (subnote_to_update = all_text_subnotes_by_type[column.name].fetch(column.index, nil))
                   if subnote_to_update['content'] != clean_value
                     record_changed = true
-                    subnote_to_update['content'] = clean_value
+
+                    # Can only drop a note if apply_deletes? is true
+                    if clean_value.to_s.empty? && !apply_deletes?
+                      errors << {
+                        sheet: SpreadsheetBuilder::SHEET_NAME,
+                        column: column.path,
+                        row: row.row_number,
+                        errors: ["Deleting a note is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+                      }
+                    else
+                      subnote_to_update['content'] = clean_value
+                    end
                   end
-                elsif clean_value != nil && clean_value != ''
+                elsif !clean_value.to_s.empty?
                   record_changed = true
+
                   sub_note = {
                     'jsonmodel_type' => 'note_text',
                     'content' => clean_value
@@ -93,37 +109,76 @@ class SpreadsheetBulkUpdater
                   }.merge(SUBRECORD_DEFAULTS.fetch(column.jsonmodel, {}))
 
                   all_text_subnotes_by_type[column.name] << sub_note
-                else
-                  # FIXME maybe a delete?
                 end
-              else
+
+              # subrecords
+              elsif SpreadsheetBuilder::SUBRECORDS_OF_INTEREST.include?(column.jsonmodel)
+                subrecord_updates_by_index[column.path_prefix] ||= {}
+
                 clean_value = column.sanitise_incoming_value(value)
 
-                subrecord_by_index[column.path_prefix] ||= Array(ao_json[column.path_prefix]).each_with_index.map{|subrecord, index| [index, subrecord]}.to_h
-
-                if (subrecord_to_update = subrecord_by_index.fetch(column.path_prefix).fetch(column.index, nil))
-                  if subrecord_to_update[column.name.to_s] != clean_value
-                    record_changed = true
-                    subrecord_to_update[column.name.to_s] = clean_value
-                  end
-                elsif clean_value != nil && clean_value != ''
-                  record_changed = true
-                  subrecord_by_index.fetch(column.path_prefix)[column.index] = {
-                    'jsonmodel_type' => column.jsonmodel.to_s,
-                    column.name.to_s => clean_value,
-                  }.merge(SUBRECORD_DEFAULTS.fetch(column.jsonmodel, {}))
-                else
-                  # FIXME maybe a delete?
-                end
+                subrecord_updates_by_index[column.path_prefix][column.index] ||= {}
+                subrecord_updates_by_index[column.path_prefix][column.index][column.name.to_s] = clean_value
               end
             end
 
-            # apply subrecords to the json, drop nils
-            subrecord_by_index.keys.each do |path|
-              ao_json[path] = []
-              subrecord_by_index[path].each do |_, subrecord|
-                next if subrecord.nil?
-                ao_json[path] << subrecord
+            # apply subrecords to the json
+            #  - update existing
+            #  - add new subrecords
+            #  - those not updated are deleted
+            subrecord_updates_by_index.each do |jsonmodel_property, updates_by_index|
+              subrecords_to_apply = []
+
+              updates_by_index.each do |index, subrecord_updates|
+                if (existing_subrecord = Array(ao_json[jsonmodel_property.to_s])[index])
+                  if subrecord_updates.all?{|_, value| value.to_s.empty? } && apply_deletes?
+                    # DELETE!
+                    record_changed = true
+                    next
+                  end
+
+                  if subrecord_updates.any?{|property, value| existing_subrecord[property] != value}
+                    record_changed = true
+                  end
+
+                  subrecords_to_apply << existing_subrecord.merge(subrecord_updates)
+                else
+                  if subrecord_updates.values.all?{|v| v.to_s.empty? }
+                    # Nothing to do!
+                    next
+                  end
+
+                  record_changed = true
+                  subrecords_to_apply << SUBRECORD_DEFAULTS.fetch(jsonmodel_property.to_s, {}).merge(subrecord_updates)
+                end
+              end
+
+              ao_json[jsonmodel_property.to_s] = subrecords_to_apply
+            end
+
+            # drop any multipart notes with only empty sub notes
+            # - drop subnotes empty note_text
+            if apply_deletes?
+              ao_json.notes.each do |note|
+                if note['jsonmodel_type'] == 'note_multipart'
+                  note['subnotes'].reject! do |subnote|
+                    if subnote['jsonmodel_type'] == 'note_text' && subnote['content'].to_s.empty?
+                      record_changed = true
+                      true
+                    else
+                      false
+                    end
+                  end
+                end
+              end
+              # - drop notes with empty subnotes
+              ao_json.notes.reject! do|note|
+                if note['jsonmodel_type'] == 'note_multipart' && note['subnotes'].empty?
+                  record_changed = true
+                  true
+                else
+                  false
+                end
               end
             end
 
@@ -137,7 +192,8 @@ class SpreadsheetBulkUpdater
             validation_errors.errors.each do |json_property, messages|
               errors << {
                 sheet: SpreadsheetBuilder::SHEET_NAME,
-                column: last_column ? last_column.path : json_property,
+                json_property: json_property,
+                column: "FIXME map from #{json_property}",
                 row: row.row_number,
                 errors: messages,
               }
@@ -186,7 +242,8 @@ class SpreadsheetBulkUpdater
   end
 
   def self.check_sheet(filename)
-    pp "TODO something clever"
+    # FIXME validations?
+    #  - maybe check all ids exist? and belong to resource?
   end
 
   def self.batch_rows(filename)
@@ -237,6 +294,10 @@ class SpreadsheetBulkUpdater
       result = s.to_s.strip
       result.empty? ? nil : result
     }
+  end
+
+  def self.apply_deletes?
+    AppConfig.has_key?(:spreadsheet_bulk_updater_apply_deletes) && AppConfig[:spreadsheet_bulk_updater_apply_deletes] == true
   end
 
 end
