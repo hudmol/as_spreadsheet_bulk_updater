@@ -33,6 +33,7 @@ class SpreadsheetBuilder
       @width = opts.fetch(:width, nil)
       @locked = opts.fetch(:locked, false)
       @property_name = opts.fetch(:property_name, jsonmodel).to_s
+      @i18n = opts.fetch(:i18n, I18n.t("#{@jsonmodel}.#{@name}", :default => @name))
     end
 
     def value_for(column_value)
@@ -42,9 +43,9 @@ class SpreadsheetBuilder
     def header_label
       if @header_label.nil?
         if @index.nil?
-          @header_label = I18n.t("#{jsonmodel}.#{name}", :default => name)
+          @header_label = @i18n
         else
-          @header_label = "#{I18n.t("#{jsonmodel}._singular")} #{index + 1} - #{I18n.t("#{jsonmodel}.#{name}", :default => name)}"
+          @header_label = "#{I18n.t("#{jsonmodel}._singular")} #{index + 1} - #{@i18n}"
         end
       end
 
@@ -121,14 +122,14 @@ class SpreadsheetBuilder
     ],
     :instance => [
       EnumColumn.new(:instance, :instance_type, 'instance_instance_type', :property_name => :instances, :skip_enum_values => ['digital_object']),
-      EnumColumn.new(:instance, :top_container_type, 'container_type', :property_name => :instances),
-      StringColumn.new(:instance, :top_container_indicator, :property_name => :instances),
-      StringColumn.new(:instance, :top_container_barcode, :property_name => :instances),
-      EnumColumn.new(:instance, :sub_container_type_2, 'container_type', :property_name => :instances),
-      StringColumn.new(:instance, :sub_container_indicator_2, :property_name => :instances),
-      StringColumn.new(:instance, :sub_container_barcode_2, :property_name => :instances),
-      EnumColumn.new(:instance, :sub_container_type_3, 'container_type', :property_name => :instances),
-      StringColumn.new(:instance, :sub_container_indicator_3, :property_name => :instances),
+      EnumColumn.new(:instance, :top_container_type, 'container_type', :property_name => :instances, :i18n => "Top Container Type"),    # Sorry, these are hardcoded as
+      StringColumn.new(:instance, :top_container_indicator, :property_name => :instances, :i18n => "Top Container Indicator"),          # all top and sub container I18n
+      StringColumn.new(:instance, :top_container_barcode, :property_name => :instances, :i18n => "Top Container Barcode"),              # are available only in the
+      EnumColumn.new(:instance, :sub_container_type_2, 'container_type', :property_name => :instances, :i18n => "Child Type"),          # frontend... WHY?!
+      StringColumn.new(:instance, :sub_container_indicator_2, :property_name => :instances, :i18n => "Child Indicator"),                #
+      StringColumn.new(:instance, :sub_container_barcode_2, :property_name => :instances, :i18n => "Child Container Barcode"),          #
+      EnumColumn.new(:instance, :sub_container_type_3, 'container_type', :property_name => :instances, :i18n => "Grandchild Type"),     # Boo.
+      StringColumn.new(:instance, :sub_container_indicator_3, :property_name => :instances, :i18n => "Grandchild Indicator"),           #
     ],
   }
   # Conditions of Access, Scope and Contents, Bio/Hist note
