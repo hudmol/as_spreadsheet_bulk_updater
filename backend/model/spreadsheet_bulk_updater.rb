@@ -18,6 +18,8 @@ class SpreadsheetBulkUpdater
 
     column_by_path = extract_columns(filename)
 
+    top_containers_map = extract_top_containers(filename, column_by_path)
+
     DB.open(true) do
       batch_rows(filename) do |batch|
         to_process = batch.map{|row| [Integer(row.fetch('id')), row]}.to_h
@@ -237,6 +239,42 @@ class SpreadsheetBulkUpdater
       result << Integer(row.fetch('id'))
     end
     result
+  end
+
+  TopContainerCandidate = Struct.new(:top_container_type, :top_container_indicator, :top_container_barcode) do
+    def empty?
+      top_container_type.nil? && top_container_indicator.nil? && top_container_barcode.nil?
+    end
+  end
+
+  def self.extract_top_containers(filename, column_by_path)
+    top_containers = {}
+    top_container_columns = {}
+
+    column_by_path.each do |path, column|
+      if [:top_container_type, :top_container_indicator, :top_container_barcode].include?(column.name)
+        top_container_columns[path] = column
+      end
+    end
+
+    each_row(filename) do |row|
+      next if row.empty?
+      by_index = {}
+      top_container_columns.each do |path, column|
+        by_index[column.index] ||= TopContainerCandidate.new
+        by_index[column.index][column.name] = row.fetch(path)
+      end
+
+      by_index.values.reject(&:empty?).each do |top_container|
+        top_containers[top_container] = nil
+      end
+    end
+
+    return {} if top_containers.empty?
+
+
+
+    top_containers
   end
 
   def self.check_sheet(filename)
