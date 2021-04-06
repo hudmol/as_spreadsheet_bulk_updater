@@ -75,11 +75,12 @@ class SpreadsheetBuilder
   end
 
   class EnumColumn < StringColumn
-    attr_accessor :enum_name
+    attr_accessor :enum_name, :skip_values
 
     def initialize(jsonmodel, name, enum_name, opts = {})
       super(jsonmodel, name, {:column => "#{name}_id"}.merge(opts))
       @enum_name = enum_name
+      @skip_values = opts.fetch(:skip_enum_values, [])
     end
 
     def value_for(column_value)
@@ -118,6 +119,17 @@ class SpreadsheetBuilder
       EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15, :property_name => :extents),
       StringColumn.new(:extent, :container_summary, :width => 20, :property_name => :extents),
     ],
+    :instance => [
+      EnumColumn.new(:instance, :instance_type, 'instance_instance_type', :property_name => :instances, :skip_enum_values => ['digital_object']),
+      EnumColumn.new(:instance, :top_container_type, 'container_type', :property_name => :instances),
+      StringColumn.new(:instance, :top_container_indicator, :property_name => :instances),
+      StringColumn.new(:instance, :top_container_barcode, :property_name => :instances),
+      EnumColumn.new(:instance, :sub_container_type_2, 'container_type', :property_name => :instances),
+      StringColumn.new(:instance, :sub_container_indicator_2, :property_name => :instances),
+      StringColumn.new(:instance, :sub_container_barcode_2, :property_name => :instances),
+      EnumColumn.new(:instance, :sub_container_type_3, 'container_type', :property_name => :instances),
+      StringColumn.new(:instance, :sub_container_indicator_3, :property_name => :instances),
+    ],
   }
   # Conditions of Access, Scope and Contents, Bio/Hist note
   MULTIPART_NOTES_OF_INTEREST = [:accessrestrict, :scopecontent, :bioghist]
@@ -135,6 +147,15 @@ class SpreadsheetBuilder
         # Notes, Extent: At least 3 more than the max
         results[subrecord] = max + 3
       end
+
+      # Instances are special
+      instances_max = db[:instance]
+        .filter(:archival_object_id => @ao_ids)
+        .filter(Sequel.~(:instance_type_id => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object')))
+        .group_and_count(:archival_object_id)
+        .max(:count) || 0
+
+      results[:instance] = instances_max + 3
 
       MULTIPART_NOTES_OF_INTEREST.each do |note_type|
         text_string = '"jsonmodel_type":"note_text"'
@@ -170,6 +191,12 @@ class SpreadsheetBuilder
     end
   end
 
+  def instances_iterator
+    @max_subrecord_counts.fetch(:instance).times do |i|
+      yield(:instance, i)
+    end
+  end
+
   def notes_iterator
     MULTIPART_NOTES_OF_INTEREST
       .map do |note_type|
@@ -198,6 +225,14 @@ class SpreadsheetBuilder
 
     subrecords_iterator do |subrecord, index|
       FIELDS_OF_INTEREST.fetch(subrecord).each do |column|
+        column = column.clone
+        column.index = index
+        result << column
+      end
+    end
+
+    instances_iterator do |_, index|
+      FIELDS_OF_INTEREST.fetch(:instance).each do |column|
         column = column.clone
         column.index = index
         result << column
@@ -236,6 +271,42 @@ class SpreadsheetBuilder
           end
         end
 
+        # Instances are special
+        db[:instance]
+          .join(:sub_container, Sequel.qualify(:sub_container, :instance_id) => Sequel.qualify(:instance, :id))
+          .join(:top_container_link_rlshp, Sequel.qualify(:top_container_link_rlshp, :sub_container_id) => Sequel.qualify(:sub_container, :id))
+          .join(:top_container, Sequel.qualify(:top_container, :id) => Sequel.qualify(:top_container_link_rlshp, :top_container_id))
+          .filter(Sequel.qualify(:instance, :archival_object_id) => @ao_ids)
+          .filter(Sequel.~(Sequel.qualify(:instance, :instance_type_id) => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object')))
+          .select(
+            Sequel.as(Sequel.qualify(:instance, :archival_object_id), :archival_object_id),
+            Sequel.as(Sequel.qualify(:instance, :instance_type_id), :instance_type_id),
+            Sequel.as(Sequel.qualify(:top_container, :type_id), :top_container_type_id),
+            Sequel.as(Sequel.qualify(:top_container, :indicator), :top_container_indicator),
+            Sequel.as(Sequel.qualify(:top_container, :barcode), :top_container_barcode),
+            Sequel.as(Sequel.qualify(:sub_container, :type_2_id), :sub_container_type_2_id),
+            Sequel.as(Sequel.qualify(:sub_container, :indicator_2), :sub_container_indicator_2),
+            Sequel.as(Sequel.qualify(:sub_container, :barcode_2), :sub_container_barcode_2),
+            Sequel.as(Sequel.qualify(:sub_container, :type_3_id), :sub_container_type_3_id),
+            Sequel.as(Sequel.qualify(:sub_container, :indicator_3), :sub_container_indicator_3),
+          ).each do |row|
+          pp row
+          subrecord_datasets[:instance] ||= {}
+          subrecord_datasets[:instance][row[:archival_object_id]] ||= []
+          subrecord_datasets[:instance][row[:archival_object_id]] << {
+            :instance_type => BackendEnumSource.value_for_id('instance_instance_type', row[:instance_type_id]),
+            :top_container_type => BackendEnumSource.value_for_id('container_type', row[:top_container_type_id]),
+            :top_container_indicator => row[:top_container_indicator],
+            :top_container_barcode => row[:top_container_barcode],
+            :sub_container_type_2 => BackendEnumSource.value_for_id('container_type', row[:sub_container_type_2_id]),
+            :sub_container_indicator_2 => row[:sub_container_indicator_2],
+            :sub_container_barcode_2 => row[:sub_container_barcode_2],
+            :sub_container_type_3 => BackendEnumSource.value_for_id('container_type', row[:sub_container_type_3_id]),
+            :sub_container_indicator_3 => row[:sub_container_indicator_3],
+          }
+        end
+
+        # Notes
         MULTIPART_NOTES_OF_INTEREST.each do |note_type|
           db[:note]
             .filter(:archival_object_id => batch)
@@ -340,10 +411,12 @@ class SpreadsheetBuilder
     all_columns.each_with_index do |column, col_index|
       if column.is_a?(EnumColumn)
         enum_sheet.write(0, col_index, column.enum_name)
-        BackendEnumSource.values_for(column.enum_name).each_with_index do |enum, enum_index|
+        enum_values = BackendEnumSource.values_for(column.enum_name)
+        enum_values.reject!{|value| column.skip_values.include?(value)}
+        enum_values.each_with_index do |enum, enum_index|
           enum_sheet.write(enum_index+1, col_index, enum)
         end
-        enum_counts_by_col[col_index] = BackendEnumSource.values_for(column.enum_name).length
+        enum_counts_by_col[col_index] = enum_values.length
       elsif column.is_a?(BooleanColumn)
         enum_sheet.write(0, col_index, 'boolean')
         enum_sheet.write(1, col_index, 'true')
