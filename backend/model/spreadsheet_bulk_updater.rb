@@ -29,6 +29,7 @@ class SpreadsheetBulkUpdater
     ['indicator_3', 'sub_container_indicator_3']
   ]
 
+
   def self.run(filename, job)
     # Run a cursory look over the spreadsheet
     check_sheet(filename)
@@ -188,6 +189,10 @@ class SpreadsheetBulkUpdater
 
                   if subrecord_updates.any?{|property, value| existing_subrecord[property] != value}
                     record_changed = true
+
+                    if jsonmodel_property.to_s == 'dates'
+                      apply_date_defaults(subrecord_updates)
+                    end
                   end
 
                   subrecords_to_apply << existing_subrecord.merge(subrecord_updates)
@@ -197,8 +202,14 @@ class SpreadsheetBulkUpdater
                     next
                   end
 
+                  if jsonmodel_property.to_s == 'dates'
+                    apply_date_defaults(subrecord_updates)
+                  end
+
                   record_changed = true
-                  subrecords_to_apply << SUBRECORD_DEFAULTS.fetch(jsonmodel_property.to_s, {}).merge(subrecord_updates)
+                  subrecord_to_create = SUBRECORD_DEFAULTS.fetch(jsonmodel_property.to_s, {}).merge(subrecord_updates)
+
+                  subrecords_to_apply << subrecord_to_create
                 end
               end
 
@@ -362,6 +373,16 @@ class SpreadsheetBulkUpdater
       updated: updated_uris.length,
       updated_uris: updated_uris,
     }
+  end
+
+  def self.apply_date_defaults(subrecord)
+    if subrecord['end'].nil?
+      subrecord['date_type'] = 'single'
+    else
+      subrecord['date_type'] = 'inclusive'
+    end
+
+    subrecord
   end
 
   def self.extract_columns(filename)

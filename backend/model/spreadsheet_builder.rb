@@ -108,7 +108,6 @@ class SpreadsheetBuilder
       EnumColumn.new(:archival_object, :level, 'archival_record_level', :width => 15),
     ],
     :date => [
-      EnumColumn.new(:date, :date_type, 'date_type', :property_name => :dates),
       StringColumn.new(:date, :expression, :width => 15, :property_name => :dates),
       StringColumn.new(:date, :begin, :width => 10, :property_name => :dates),
       StringColumn.new(:date, :end, :width => 10, :property_name => :dates),
