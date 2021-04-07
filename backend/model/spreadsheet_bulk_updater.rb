@@ -45,11 +45,8 @@ class SpreadsheetBulkUpdater
       resource_id = resource_ids_in_play(filename).fetch(0)
 
       # before we get too crazy, let's ensure we have all the top containers
-      # we need for any instances in the spreadsheet
+      # available to this resource
       top_containers_in_resource = extract_top_containers_for_resource(db, resource_id)
-      top_containers_in_sheet = extract_top_containers_from_sheet(filename, column_by_path)
-
-      create_missing_top_containers(top_containers_in_sheet, top_containers_in_resource)
 
 
       batch_rows(filename) do |batch|
@@ -294,11 +291,20 @@ class SpreadsheetBulkUpdater
                   # assume this was intentional and let validation do its thing
                   existing_subrecord['sub_container']['top_container']['ref'] = nil
                 else
-                  top_container_uri = top_containers_in_resource.fetch(candidate_top_container)
+                  if top_containers_in_resource.has_key?(candidate_top_container)
+                    top_container_uri = top_containers_in_resource.fetch(candidate_top_container)
 
-                  if existing_subrecord.fetch('sub_container').fetch('top_container').fetch('ref') != top_container_uri
-                    existing_subrecord['sub_container']['top_container']['ref'] = top_container_uri
-                    instance_changed = true
+                    if existing_subrecord.fetch('sub_container').fetch('top_container').fetch('ref') != top_container_uri
+                      existing_subrecord['sub_container']['top_container']['ref'] = top_container_uri
+                      instance_changed = true
+                    end
+                  else
+                    errors << {
+                      sheet: SpreadsheetBuilder::SHEET_NAME,
+                      column: "instances/#{index}/top_container_indicator",
+                      row: row.row_number,
+                      errors: ["Top container not found attached within resource: #{candidate_top_container.inspect}"],
+                    }
                   end
                 end
 
@@ -331,8 +337,17 @@ class SpreadsheetBulkUpdater
                                                                     instance_updates['top_container_indicator'],
                                                                     instance_updates['top_container_barcode'])
 
-                top_container_uri = top_containers_in_resource.fetch(candidate_top_container)
-                instance_to_create['sub_container']['top_container'] = {'ref' => top_container_uri}
+                if top_containers_in_resource.has_key?(candidate_top_container)
+                  top_container_uri = top_containers_in_resource.fetch(candidate_top_container)
+                  instance_to_create['sub_container']['top_container'] = {'ref' => top_container_uri}
+                else
+                  errors << {
+                    sheet: SpreadsheetBuilder::SHEET_NAME,
+                    column: "instances/#{index}/top_container_indicator",
+                    row: row.row_number,
+                    errors: ["Top container not found attached within resource: #{candidate_top_container.inspect}"],
+                  }
+                end
 
                 instances_to_apply << instance_to_create
               end
@@ -427,18 +442,18 @@ class SpreadsheetBulkUpdater
     end
   end
 
-  def self.create_missing_top_containers(in_sheet, in_resource)
-    (in_sheet.keys - in_resource.keys).each do |candidate_to_create|
-      tc_json = JSONModel(:top_container).new
-      tc_json.indicator = candidate_to_create.top_container_indicator
-      tc_json.type = candidate_to_create.top_container_type
-      tc_json.barcode = candidate_to_create.top_container_barcode
-
-      tc = TopContainer.create_from_json(tc_json)
-
-      in_resource[candidate_to_create] = tc.uri
-    end
-  end
+  # def self.create_missing_top_containers(in_sheet, in_resource)
+  #   (in_sheet.keys - in_resource.keys).each do |candidate_to_create|
+  #     tc_json = JSONModel(:top_container).new
+  #     tc_json.indicator = candidate_to_create.top_container_indicator
+  #     tc_json.type = candidate_to_create.top_container_type
+  #     tc_json.barcode = candidate_to_create.top_container_barcode
+  #
+  #     tc = TopContainer.create_from_json(tc_json)
+  #
+  #     in_resource[candidate_to_create] = tc.uri
+  #   end
+  # end
 
   def self.extract_top_containers_from_sheet(filename, column_by_path)
     top_containers = {}
