@@ -171,10 +171,19 @@ class SpreadsheetBulkUpdater
 
               updates_by_index.each do |index, subrecord_updates|
                 if (existing_subrecord = Array(ao_json[jsonmodel_property.to_s])[index])
-                  if subrecord_updates.all?{|_, value| value.to_s.empty? } && apply_deletes?
-                    # DELETE!
-                    record_changed = true
-                    next
+                  if subrecord_updates.all?{|_, value| value.to_s.empty? }
+                    if apply_deletes?
+                      # DELETE!
+                      record_changed = true
+                      next
+                    else
+                      errors << {
+                        sheet: SpreadsheetBuilder::SHEET_NAME,
+                        column: "#{jsonmodel_property}/#{index}",
+                        row: row.row_number,
+                        errors: ["Deleting a subrecord is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+                      }
+                    end
                   end
 
                   if subrecord_updates.any?{|property, value| existing_subrecord[property] != value}
