@@ -48,6 +48,10 @@ class SpreadsheetBulkUpdater
       # available to this resource
       top_containers_in_resource = extract_top_containers_for_resource(db, resource_id)
 
+      if create_missing_top_containers?
+        top_containers_in_sheet = extract_top_containers_from_sheet(filename, column_by_path)
+        create_missing_top_containers(top_containers_in_sheet, top_containers_in_resource, job)
+      end
 
       batch_rows(filename) do |batch|
         to_process = batch.map{|row| [Integer(row.fetch('id')), row]}.to_h
@@ -442,18 +446,20 @@ class SpreadsheetBulkUpdater
     end
   end
 
-  # def self.create_missing_top_containers(in_sheet, in_resource)
-  #   (in_sheet.keys - in_resource.keys).each do |candidate_to_create|
-  #     tc_json = JSONModel(:top_container).new
-  #     tc_json.indicator = candidate_to_create.top_container_indicator
-  #     tc_json.type = candidate_to_create.top_container_type
-  #     tc_json.barcode = candidate_to_create.top_container_barcode
-  #
-  #     tc = TopContainer.create_from_json(tc_json)
-  #
-  #     in_resource[candidate_to_create] = tc.uri
-  #   end
-  # end
+  def self.create_missing_top_containers(in_sheet, in_resource, job)
+    (in_sheet.keys - in_resource.keys).each do |candidate_to_create|
+      tc_json = JSONModel(:top_container).new
+      tc_json.indicator = candidate_to_create.top_container_indicator
+      tc_json.type = candidate_to_create.top_container_type
+      tc_json.barcode = candidate_to_create.top_container_barcode
+
+      job.write_output("Creating top container for type: #{candidate_to_create.top_container_type} indicator: #{candidate_to_create.top_container_indicator}")
+
+      tc = TopContainer.create_from_json(tc_json)
+
+      in_resource[candidate_to_create] = tc.uri
+    end
+  end
 
   def self.extract_top_containers_from_sheet(filename, column_by_path)
     top_containers = {}
@@ -605,6 +611,10 @@ class SpreadsheetBulkUpdater
 
   def self.apply_deletes?
     AppConfig.has_key?(:spreadsheet_bulk_updater_apply_deletes) && AppConfig[:spreadsheet_bulk_updater_apply_deletes] == true
+  end
+
+  def self.create_missing_top_containers?
+    AppConfig.has_key?(:spreadsheet_bulk_updater_create_missing_top_containers) && AppConfig[:spreadsheet_bulk_updater_create_missing_top_containers] == true
   end
 
 end
