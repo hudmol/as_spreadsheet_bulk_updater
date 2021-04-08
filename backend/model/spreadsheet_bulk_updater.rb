@@ -86,7 +86,7 @@ class SpreadsheetBulkUpdater
                       sheet: SpreadsheetBuilder::SHEET_NAME,
                       column: column.path,
                       row: row.row_number,
-                      errors: ["Versions are out sync: #{value} record is now: #{ao_json['lock_version']}"]
+                      errors: ["Versions are out of sync: #{value} record is now: #{ao_json['lock_version']}"]
                     }
                   end
                 else
