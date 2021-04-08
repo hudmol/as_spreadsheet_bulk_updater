@@ -20,6 +20,30 @@ The new background job is called "Spreadsheet Bulk Update Job" and is available
 from the "Create > Background Job" menu. To queue your spreadsheet for import,
 simply select your XLSX file in the presented form and click "Start Job". 
 
+### Fields and Subrecords
+
+Archival Object fields:
+* title
+* level
+
+Subrecords:
+* dates
+* extents
+* instances
+
+The spreadsheet contains grouped columns for each existing subrecord plus at
+least 3 empty sets to allow creation of new subrecords on the archival object.
+The columns provide access to a subset of the subrecord fields, whereby any
+mandatory fields not provided are given default values upon import.
+
+Notes:
+* accessrestrict
+* bioghist
+* scopecontent
+
+The spreadsheet exposes the `note_text` for each of the notes above and offers
+at least 2 columns for each type.
+
 ## Prerequisites
 
 This plugin relies on the digitization_work_order plugin being enabled,
@@ -54,3 +78,23 @@ Install dependencies by initializing the plugin:
 See also:
 
   https://archivesspace.github.io/archivesspace/user/archivesspace-plug-ins/
+
+## Configuration
+
+> AppConfig[:spreadsheet_bulk_updater_apply_deletes] : `boolean`
+
+If enabled, the importer will drop subrecords (dates, extents, instances or
+notes) when all columns for that existing subrecord have no values.  As not all
+subrecord fields have a corresponding column in the spreadsheet, you may
+unwittingly drop a subrecord which has data in other fields.
+
+Default: `false`
+
+> AppConfig[:spreadsheet_bulk_updater_create_missing_top_containers] : `boolean`
+
+By default, the importer will throw an error when it finds a top container
+in the spreadsheet that is not attached within the current resource's hierarchy.
+
+When enabled, those missing top containers are created on demand.
+
+Default: `false`
