@@ -290,7 +290,7 @@ class SpreadsheetBuilder
             Sequel.as(Sequel.qualify(:sub_container, :type_3_id), :sub_container_type_3_id),
             Sequel.as(Sequel.qualify(:sub_container, :indicator_3), :sub_container_indicator_3),
           ).each do |row|
-          pp row
+
           subrecord_datasets[:instance] ||= {}
           subrecord_datasets[:instance][row[:archival_object_id]] ||= []
           subrecord_datasets[:instance][row[:archival_object_id]] << {
