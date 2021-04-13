@@ -65,6 +65,20 @@ class SpreadsheetBuilder
     end
   end
 
+  class DateStringColumn < StringColumn
+    def initialize(jsonmodel, name, opts = {})
+      super(jsonmodel, name, opts)
+    end
+
+    def sanitise_incoming_value(value)
+      if value && value =~ /^([0-9]{4}-[0-9]{2}-[0-9]{2})/
+        $1
+      else
+        value
+      end
+    end
+  end
+
   class NoteContentColumn < StringColumn
     def header_label
       "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.#{@name}")} - #{index + 1}"
@@ -109,8 +123,8 @@ class SpreadsheetBuilder
     ],
     :date => [
       StringColumn.new(:date, :expression, :width => 15, :property_name => :dates),
-      StringColumn.new(:date, :begin, :width => 10, :property_name => :dates),
-      StringColumn.new(:date, :end, :width => 10, :property_name => :dates),
+      DateStringColumn.new(:date, :begin, :width => 10, :property_name => :dates),
+      DateStringColumn.new(:date, :end, :width => 10, :property_name => :dates),
       EnumColumn.new(:date, :certainty, 'date_certainty', :property_name => :dates),
     ],
     :extent => [
@@ -290,7 +304,6 @@ class SpreadsheetBuilder
             Sequel.as(Sequel.qualify(:sub_container, :type_3_id), :sub_container_type_3_id),
             Sequel.as(Sequel.qualify(:sub_container, :indicator_3), :sub_container_indicator_3),
           ).each do |row|
-
           subrecord_datasets[:instance] ||= {}
           subrecord_datasets[:instance][row[:archival_object_id]] ||= []
           subrecord_datasets[:instance][row[:archival_object_id]] << {
@@ -399,7 +412,11 @@ class SpreadsheetBuilder
     rowidx = 2
     dataset_iterator do |row_values, locked_column_indexes|
       row_values.each_with_index do |columnAndValue, i|
-        sheet.write(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
+        if columnAndValue.value
+          sheet.write_string(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
+        else
+          sheet.write(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
+        end
       end
 
       rowidx += 1
@@ -414,13 +431,13 @@ class SpreadsheetBuilder
         enum_values = BackendEnumSource.values_for(column.enum_name)
         enum_values.reject!{|value| column.skip_values.include?(value)}
         enum_values.each_with_index do |enum, enum_index|
-          enum_sheet.write(enum_index+1, col_index, enum)
+          enum_sheet.write_string(enum_index+1, col_index, enum)
         end
         enum_counts_by_col[col_index] = enum_values.length
       elsif column.is_a?(BooleanColumn)
-        enum_sheet.write(0, col_index, 'boolean')
-        enum_sheet.write(1, col_index, 'true')
-        enum_sheet.write(2, col_index, 'false')
+        enum_sheet.write_string(0, col_index, 'boolean')
+        enum_sheet.write_string(1, col_index, 'true')
+        enum_sheet.write_string(2, col_index, 'false')
         enum_counts_by_col[col_index] = 2
       end
     end
