@@ -61,7 +61,9 @@ class SpreadsheetBuilder
     end
 
     def sanitise_incoming_value(value)
-      value
+      return nil if value.nil?
+
+      value.to_s.strip
     end
   end
 
@@ -71,10 +73,14 @@ class SpreadsheetBuilder
     end
 
     def sanitise_incoming_value(value)
-      if value && value =~ /^([0-9]{4}-[0-9]{2}-[0-9]{2})/
-        $1
+      return nil if value.nil?
+
+      if value.is_a?(Date)
+        value.iso8601
+      elsif value.is_a?(Time)
+        value.to_date.iso8601
       else
-        value
+        value.to_s.strip
       end
     end
   end

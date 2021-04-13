@@ -603,9 +603,16 @@ class SpreadsheetBulkUpdater
   end
 
   def self.row_values(row)
-    row.map {|s|
-      result = s.to_s.strip
-      result.empty? ? nil : result
+    row.map {|value|
+      if value.nil?
+        value
+      elsif value.is_a?(String)
+        result = value.strip
+        result.empty? ? nil : result
+      else
+        # retain type int, date, time, etc
+        value
+      end
     }
   end
 
