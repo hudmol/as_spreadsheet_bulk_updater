@@ -363,7 +363,7 @@ class SpreadsheetBuilder
                 current_row << ColumnAndValue.new(nil, column)
               end
             else
-              subrecord_data = subrecord_datasets.fetch(column.jsonmodel).fetch(row[:id], []).fetch(column.index, nil)
+              subrecord_data = subrecord_datasets.fetch(column.jsonmodel, {}).fetch(row[:id], []).fetch(column.index, nil)
               if subrecord_data
                 current_row << ColumnAndValue.new(subrecord_data.fetch(column.name, nil), column)
               else
