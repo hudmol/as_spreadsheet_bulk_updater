@@ -62,18 +62,15 @@ class SpreadsheetBulkUpdater
         ao_objs.zip(ao_jsons).each do |ao, ao_json|
           record_changed = false
           row = to_process.fetch(ao.id)
-          last_column = nil
 
           subrecord_updates_by_index = {}
           instance_updates_by_index = {}
 
-          all_text_subnotes_by_type = {}
+          notes_by_type = {}
 
           begin
             row.values.each do |path, value|
               column = column_by_path.fetch(path)
-
-              last_column = column
 
               # fields on the AO
               if column.jsonmodel == :archival_object
@@ -99,50 +96,76 @@ class SpreadsheetBulkUpdater
                 end
 
               # notes
-              elsif column.jsonmodel == :note
-                unless all_text_subnotes_by_type.has_key?(column.name)
-                  all_text_subnotes = ao_json.notes
-                                       .select{|note| note['jsonmodel_type'] == 'note_multipart' && note['type'] == column.name.to_s}
-                                       .map{|note| note['subnotes']}
-                                       .flatten
-                                       .select{|subnote| subnote['jsonmodel_type'] == 'note_text'}
+              elsif column.is_a?(SpreadsheetBuilder::NoteContentColumn) || SpreadsheetBuilder::EXTRA_NOTE_FIELDS.has_key?(column.jsonmodel)
+                note_type = column.is_a?(SpreadsheetBuilder::NoteContentColumn) ? column.name : column.jsonmodel
 
-                  all_text_subnotes_by_type[column.name] = all_text_subnotes
+                unless notes_by_type.has_key?(note_type)
+                  notes_by_type[note_type] = ao_json.notes
+                                              .select{|note| note['jsonmodel_type'] == 'note_multipart' && note['type'] == note_type.to_s}
                 end
 
                 clean_value = column.sanitise_incoming_value(value)
 
-                if (subnote_to_update = all_text_subnotes_by_type[column.name].fetch(column.index, nil))
-                  if subnote_to_update['content'] != clean_value
-                    record_changed = true
+                note_to_update = notes_by_type[note_type].fetch(column.index, nil)
 
-                    # Can only drop a note if apply_deletes? is true
-                    if clean_value.to_s.empty? && !apply_deletes?
-                      errors << {
-                        sheet: SpreadsheetBuilder::SHEET_NAME,
-                        column: column.path,
-                        row: row.row_number,
-                        errors: ["Deleting a note is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
-                      }
-                    else
-                      subnote_to_update['content'] = clean_value
-                    end
-                  end
-                elsif !clean_value.to_s.empty?
+                if note_to_update.nil? && !clean_value.to_s.empty?
+                  # we need to create a new note!
                   record_changed = true
 
-                  sub_note = SUBRECORD_DEFAULTS.fetch('note_text', {}).merge({
-                    'jsonmodel_type' => 'note_text',
-                    'content' => clean_value
-                  })
+                  note_to_update = SUBRECORD_DEFAULTS.fetch(column.jsonmodel.to_s, {}).merge({
+                                     'jsonmodel_type' => 'note_multipart',
+                                     'type' => note_type.to_s,
+                                     'subnotes' => [],
+                                   })
 
-                  ao_json.notes << SUBRECORD_DEFAULTS.fetch(column.jsonmodel.to_s, {}).merge({
-                    'jsonmodel_type' => 'note_multipart',
-                    'type' => column.name.to_s,
-                    'subnotes' => [sub_note],
-                  })
+                  ao_json.notes << note_to_update
+                end
 
-                  all_text_subnotes_by_type[column.name] << sub_note
+                if note_to_update
+                  # Apply content
+                  if column.is_a?(SpreadsheetBuilder::NoteContentColumn)
+                    # Update the first text note
+                    if (first_text_note = note_to_update['subnotes'].detect{|subnote| subnote['jsonmodel_type'] == 'note_text'})
+                      if clean_value != first_text_note['content']
+                        record_changed = true
+
+                        if clean_value.to_s.empty? && !apply_deletes?
+                          errors << {
+                            sheet: SpreadsheetBuilder::SHEET_NAME,
+                            column: column.path,
+                            row: row.row_number,
+                            errors: ["Deleting a note is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+                          }
+                        else
+                          first_text_note['content'] = clean_value
+                        end
+                      end
+
+                    # Add a text note!
+                    elsif !clean_value.to_s.empty?
+                      record_changed = true
+                      note_to_update['subnotes'] << SUBRECORD_DEFAULTS.fetch('note_text', {}).merge({
+                                                      'jsonmodel_type' => 'note_text',
+                                                      'content' => clean_value
+                                                    })
+                    end
+
+                  # Update the extra field
+                  else
+                    # FIXME Assuming the column property name gives the path on the note
+                    note_to_update[column.property_name.to_s] ||= {}
+                    note_path_to_update = note_to_update[column.property_name.to_s]
+
+                    if column.name.to_s == 'local_access_restriction_type'
+                      # this is an array!
+                      clean_value = clean_value.to_s.empty? ? [] : [clean_value]
+                    end
+
+                    if note_path_to_update[column.name.to_s] != clean_value
+                      record_changed = true
+                      note_path_to_update[column.name.to_s] = clean_value
+                    end
+                  end
                 end
 
               # subrecords and instances
@@ -368,6 +391,18 @@ class SpreadsheetBulkUpdater
               ao.update_from_json(ao_json)
               job.write_output("Updated archival object #{ao.id} - #{ao_json.display_string}")
               updated_uris << ao_json['uri']
+            end
+
+          rescue ArgumentError => arg_error
+            if arg_error.message == 'invalid date'
+              errors << {
+                sheet: SpreadsheetBuilder::SHEET_NAME,
+                json_property: 'N/A',
+                row: row.row_number,
+                errors: ['Invalid date detected'],
+              }
+            else
+              raise arg_error
             end
 
           rescue JSONModel::ValidationException => validation_errors

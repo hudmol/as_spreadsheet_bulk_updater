@@ -34,6 +34,8 @@ class SpreadsheetBuilder
       @locked = opts.fetch(:locked, false)
       @property_name = opts.fetch(:property_name, jsonmodel).to_s
       @i18n = opts.fetch(:i18n, I18n.t("#{@jsonmodel}.#{@name}", :default => @name))
+      @i18n_proc = opts.fetch(:i18n_proc, nil)
+      @path_proc = opts.fetch(:path_proc, nil)
     end
 
     def value_for(column_value)
@@ -42,10 +44,14 @@ class SpreadsheetBuilder
 
     def header_label
       if @header_label.nil?
-        if @index.nil?
-          @header_label = @i18n
+        if @i18n_proc
+          @header_label = @i18n_proc.call(self)
         else
-          @header_label = "#{I18n.t("#{jsonmodel}._singular")} #{index + 1} - #{@i18n}"
+          if @index.nil?
+            @header_label = @i18n
+          else
+            @header_label = "#{I18n.t("#{jsonmodel}._singular")} #{index + 1} - #{@i18n}"
+          end
         end
       end
 
@@ -53,6 +59,10 @@ class SpreadsheetBuilder
     end
 
     def path
+      if @path_proc
+        return @path_proc.call(self)
+      end
+
       if jsonmodel == :archival_object
         name.to_s
       else
@@ -87,11 +97,11 @@ class SpreadsheetBuilder
 
   class NoteContentColumn < StringColumn
     def header_label
-      "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.#{@name}")} - #{index + 1}"
+      "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.#{@name}")} - #{index + 1} - Content"
     end
 
     def path
-      [@jsonmodel.to_s, @name.to_s, @index.to_s].join('/')
+      [@jsonmodel.to_s, @name.to_s, @index.to_s, 'content'].join('/')
     end
   end
 
@@ -154,6 +164,36 @@ class SpreadsheetBuilder
   # Conditions of Access, Scope and Contents, Bio/Hist note
   MULTIPART_NOTES_OF_INTEREST = [:accessrestrict, :scopecontent, :bioghist]
 
+  EXTRA_NOTE_FIELDS = {
+    :accessrestrict => [
+      DateStringColumn.new(:accessrestrict, :begin, :width => 10,
+                           :property_name => :rights_restriction,
+                           :i18n_proc => proc{|col|
+                             "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.accessrestrict")} - #{col.index + 1} - Begin"
+                           },
+                           :path_proc => proc{|col|
+                             ['note', col.jsonmodel.to_s, col.index.to_s, col.name.to_s].join('/')
+                           }),
+      DateStringColumn.new(:accessrestrict, :end, :width => 10,
+                           :property_name => :rights_restriction,
+                           :i18n_proc => proc{|col|
+                             "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.accessrestrict")} - #{col.index + 1} - End"
+                           },
+                           :path_proc => proc{|col|
+                             ['note', col.jsonmodel.to_s, col.index.to_s, col.name.to_s].join('/')
+                           }),
+      EnumColumn.new(:accessrestrict, :local_access_restriction_type, 'restriction_type',
+                     :width => 15,
+                     :property_name => :rights_restriction,
+                     :i18n_proc => proc{|col|
+                       "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.accessrestrict")} - #{col.index + 1} - Type"
+                     },
+                     :path_proc => proc{|col|
+                       ['note', col.jsonmodel.to_s, col.index.to_s, col.name.to_s].join('/')
+                     }),
+    ]
+  }
+
   def calculate_max_subrecords
     results = {}
 
@@ -178,20 +218,14 @@ class SpreadsheetBuilder
       results[:instance] = instances_max + 3
 
       MULTIPART_NOTES_OF_INTEREST.each do |note_type|
-        text_string = '"jsonmodel_type":"note_text"'
-
-        query = db[:note]
-                 .filter(:archival_object_id => @ao_ids)
-                 .filter(Sequel.like(:notes, '%"type":"'+note_type.to_s+'"%'))
-                 .group(:archival_object_id)
-                 .select(Sequel.lit("CAST(SUM(CAST(((LENGTH(`notes`) - LENGTH(REPLACE(`notes`, '#{text_string}', ''))) / #{text_string.length}) AS SIGNED)) AS SIGNED) AS count"))
-                 .from_self
-                 .select(Sequel.lit("MAX(count) AS max"))
-
-        max = (query.first || {})[:max] || 0
+        notes_max = db[:note]
+                      .filter(:archival_object_id => @ao_ids)
+                      .filter(Sequel.like(:notes, '%"type":"'+note_type.to_s+'"%'))
+                      .group_and_count(:archival_object_id)
+                      .max(:count) || 0
 
         # Notes: At least 2 of each type
-        results[note_type] = [max, 2].max
+        results[note_type] = [notes_max, 2].max
       end
     end
 
@@ -263,6 +297,12 @@ class SpreadsheetBuilder
       column = NoteContentColumn.new(:note, note_type, :width => 30)
       column.index = index
       result << column
+
+      EXTRA_NOTE_FIELDS.fetch(note_type, []).each do |extra_column|
+        column = extra_column.clone
+        column.index = index
+        result << column
+      end
     end
 
     @columns = result
@@ -337,11 +377,18 @@ class SpreadsheetBuilder
             subrecord_datasets[note_type] ||= {}
             subrecord_datasets[note_type][row[:archival_object_id]] ||= []
 
-            Array(note_json['subnotes'])
-            .select{|subnote| subnote['jsonmodel_type'] == 'note_text'}
-            .each do |subnote|
-              subrecord_datasets[note_type][row[:archival_object_id]] << subnote['content']
+            # take the first note_text for each note
+            text_subnote = Array(note_json['subnotes']).detect{|subnote| subnote['jsonmodel_type'] == 'note_text'}
+
+            note_data = {
+              :content => text_subnote ? text_subnote['content'] : nil,
+            }
+
+            EXTRA_NOTE_FIELDS.fetch(note_type, []).each do |extra_column|
+              note_data[extra_column.name] = Array(note_json.fetch(extra_column.property_name.to_s, {}).fetch(extra_column.name.to_s, nil)).first
             end
+
+            subrecord_datasets[note_type][row[:archival_object_id]] << note_data
           end
         end
 
@@ -356,9 +403,16 @@ class SpreadsheetBuilder
             if column.jsonmodel == :archival_object
               current_row << ColumnAndValue.new(column.value_for(row[column.column]), column)
             elsif column.is_a?(NoteContentColumn)
-              note_content = subrecord_datasets.fetch(column.name, {}).fetch(row[:id], []).fetch(column.index, nil)
+              note_content = subrecord_datasets.fetch(column.name, {}).fetch(row[:id], []).fetch(column.index, {}).fetch(:content, nil)
               if note_content
                 current_row << ColumnAndValue.new(note_content, column)
+              else
+                current_row << ColumnAndValue.new(nil, column)
+              end
+            elsif EXTRA_NOTE_FIELDS.has_key?(column.jsonmodel)
+              note_field_value = subrecord_datasets.fetch(column.jsonmodel, {}).fetch(row[:id], []).fetch(column.index, {}).fetch(column.name, nil)
+              if note_field_value
+                current_row << ColumnAndValue.new(note_field_value, column)
               else
                 current_row << ColumnAndValue.new(nil, column)
               end
@@ -478,7 +532,25 @@ class SpreadsheetBuilder
   end
 
   def self.column_for_path(path)
-    if path =~ /^([a-z-_]+)\/([0-9]+)\/(.*)$/
+    if path =~ /^note\/(.*)\/([0-9]+)\/(.*)$/
+      note_type = $1.intern
+      index = Integer($2)
+      field = $3.intern
+
+      raise "Column definition not found for #{path}" unless MULTIPART_NOTES_OF_INTEREST.include?(note_type)
+
+      column = if field == :content
+                 NoteContentColumn.new(:note, note_type)
+               else
+                 EXTRA_NOTE_FIELDS.fetch(note_type, {}).detect{|col| col.name.intern == field}
+               end
+
+      raise "Column definition not found for #{path}" unless column
+
+      column = column.clone
+      column.index = index
+      column
+    elsif path =~ /^([a-z-_]+)\/([0-9]+)\/(.*)$/
       property_name = $1.intern
       index = Integer($2)
       field = $3.intern
@@ -490,14 +562,6 @@ class SpreadsheetBuilder
       column = column.clone
       column.index = index
 
-      column
-    elsif path =~ /^note\/(.*)\/([0-9]+)$/
-      note_type = $1.intern
-      index = Integer($2)
-      raise "Column definition not found for #{path}" unless MULTIPART_NOTES_OF_INTEREST.include?(note_type)
-
-      column = NoteContentColumn.new(:note, note_type)
-      column.index = index
       column
     else
       column = FIELDS_OF_INTEREST.fetch(:archival_object).find{|col| col.name == path.intern}
