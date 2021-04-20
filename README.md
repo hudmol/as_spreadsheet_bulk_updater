@@ -36,13 +36,21 @@ least 3 empty sets to allow creation of new subrecords on the archival object.
 The columns provide access to a subset of the subrecord fields, whereby any
 mandatory fields not provided are given default values upon import.
 
+If a values are provided for a subrecord at an index do not map to an existing
+subrecord, a new subrecord will be created.
+
 Notes:
 * accessrestrict
 * bioghist
 * scopecontent
 
-The spreadsheet exposes the `note_text` for each of the notes above and offers
-at least 2 columns for each type.
+The spreadsheet exposes the first and only first `note_text` for each of the
+existing note records for the note types above. Restriction fields for the note
+type `accessrestrict` are also exposed.
+
+Minimally 2 sets of columns for each note type are provided. Similarly for
+subrecords, if values for a note at an index do not map to an existing note, a
+new note will be created.
 
 ## Prerequisites
 
