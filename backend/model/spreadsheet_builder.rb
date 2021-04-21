@@ -114,8 +114,12 @@ class SpreadsheetBuilder
       @skip_values = opts.fetch(:skip_enum_values, [])
     end
 
-    def value_for(column_value)
-      BackendEnumSource.value_for_id(@enum_name, column_value)
+    def value_for(enum_id)
+      EnumMapper.enum_id_to_spreadsheet_value(enum_id, @enum_name)
+    end
+
+    def sanitise_incoming_value(value)
+      EnumMapper.spreadsheet_value_to_enum(value)
     end
   end
 
@@ -353,14 +357,14 @@ class SpreadsheetBuilder
           subrecord_datasets[:instance] ||= {}
           subrecord_datasets[:instance][row[:archival_object_id]] ||= []
           subrecord_datasets[:instance][row[:archival_object_id]] << {
-            :instance_type => BackendEnumSource.value_for_id('instance_instance_type', row[:instance_type_id]),
-            :top_container_type => BackendEnumSource.value_for_id('container_type', row[:top_container_type_id]),
+            :instance_type => EnumMapper.enum_id_to_spreadsheet_value(row[:instance_type_id], 'instance_instance_type'),
+            :top_container_type => EnumMapper.enum_id_to_spreadsheet_value(row[:top_container_type_id], 'container_type'),
             :top_container_indicator => row[:top_container_indicator],
             :top_container_barcode => row[:top_container_barcode],
-            :sub_container_type_2 => BackendEnumSource.value_for_id('container_type', row[:sub_container_type_2_id]),
+            :sub_container_type_2 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_2_id], 'container_type'),
             :sub_container_indicator_2 => row[:sub_container_indicator_2],
             :sub_container_barcode_2 => row[:sub_container_barcode_2],
-            :sub_container_type_3 => BackendEnumSource.value_for_id('container_type', row[:sub_container_type_3_id]),
+            :sub_container_type_3 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_3_id], 'container_type'),
             :sub_container_indicator_3 => row[:sub_container_indicator_3],
           }
         end
@@ -385,7 +389,14 @@ class SpreadsheetBuilder
             }
 
             EXTRA_NOTE_FIELDS.fetch(note_type, []).each do |extra_column|
-              note_data[extra_column.name] = Array(note_json.fetch(extra_column.property_name.to_s, {}).fetch(extra_column.name.to_s, nil)).first
+              value = Array(note_json.fetch(extra_column.property_name.to_s, {}).fetch(extra_column.name.to_s, nil)).first
+
+              if extra_column.is_a?(EnumColumn)
+                note_data[extra_column.name] = EnumMapper.enum_to_spreadsheet_value(value, extra_column.enum_name)
+              else
+                note_data[extra_column.name] = extra_column.value_for(value)
+              end
+
             end
 
             subrecord_datasets[note_type][row[:archival_object_id]] << note_data
@@ -490,7 +501,10 @@ class SpreadsheetBuilder
         enum_sheet.write(0, col_index, column.enum_name)
         enum_values = BackendEnumSource.values_for(column.enum_name)
         enum_values.reject!{|value| column.skip_values.include?(value)}
-        enum_values.each_with_index do |enum, enum_index|
+        enum_values
+          .map{|value| EnumMapper.enum_to_spreadsheet_value(value, column.enum_name)}
+          .sort_by {|value| value.downcase}
+          .each_with_index do |enum, enum_index|
           enum_sheet.write_string(enum_index+1, col_index, enum)
         end
         enum_counts_by_col[col_index] = enum_values.length
@@ -569,6 +583,34 @@ class SpreadsheetBuilder
       raise "Column definition not found for #{path}" if column.nil?
 
       column.clone
+    end
+  end
+
+  class EnumMapper
+    def self.enum_id_to_spreadsheet_value(enum_id, enum_name)
+      return enum_id if enum_id.to_s.empty?
+
+      enum_value = BackendEnumSource.value_for_id(enum_name, enum_id)
+
+      EnumMapper.enum_to_spreadsheet_value(enum_value, enum_name)
+    end
+
+    def self.enum_to_spreadsheet_value(enum_value, enum_name)
+      return enum_value if enum_value.to_s.empty?
+
+      enum_label = I18n.t("enumerations.#{enum_name}.#{enum_value}", :default => enum_value)
+
+      "#{enum_label} [#{enum_value}]"
+    end
+
+    def self.spreadsheet_value_to_enum(spreadsheet_value)
+      return spreadsheet_value if spreadsheet_value.to_s.empty?
+
+      if spreadsheet_value.to_s =~ /\[(.*)\]$/
+        $1
+      elsif
+        raise "Could not parse enumeration value from: #{spreadsheet_value}"
+      end
     end
   end
 end
