@@ -127,7 +127,7 @@ class SpreadsheetBulkUpdater
       record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index) ||  record_changed
 
       if SpreadsheetBulkUpdater.apply_deletes?
-        record_changed ||= delete_empty_notes(ao_json)
+        record_changed = delete_empty_notes(ao_json) || record_changed
       end
 
       # Apply changes to the Archival Object!
