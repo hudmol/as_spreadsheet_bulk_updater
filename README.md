@@ -9,10 +9,11 @@ Developed by Hudson Molonglo for The New School.
 This plugin adds the ability to download a spreadsheet for a set of archival
 objects from a particular resource.  This spreadsheet can then be used to apply
 a series of changes to those archival objects and the fields presented.  Once
-prepared, the spreadsheet can be applied via a new background job.
+prepared, the changes within the spreadsheet can be applied via a new background
+job.
 
 To download the spreadsheet there is now a "Bulk Update Spreadsheet" menu item
-available on the resource view or edit page menu (under the "More" menu). You
+available on the resource view or edit page under the "More" menu. You
 will be required to select the archival objects to be included in the
 spreadsheet and can download the XLSX from this form.
 
@@ -21,6 +22,9 @@ from the "Create > Background Job" menu. To queue your spreadsheet for import,
 simply select your XLSX file in the presented form and click "Start Job". 
 
 ### Fields and Subrecords
+
+Currently the following Archival Object fields and subrecords are exposed in the 
+XLSX spreadsheet.
 
 Archival Object fields:
 * title
@@ -36,8 +40,8 @@ least 3 empty sets to allow creation of new subrecords on the archival object.
 The columns provide access to a subset of the subrecord fields, whereby any
 mandatory fields not provided are given default values upon import.
 
-If a values are provided for a subrecord at an index do not map to an existing
-subrecord, a new subrecord will be created.
+If the values provided do not map to an existing subrecord, a new subrecord will
+be created.
 
 Notes:
 * accessrestrict
@@ -54,7 +58,7 @@ new note will be created.
 
 ## Prerequisites
 
-This plugin relies on the digitization_work_order plugin being enabled,
+This plugin relies on the `digitization_work_order` plugin being enabled,
 available here: https://github.com/hudmol/digitization_work_order.
 
 ## Installation
@@ -92,8 +96,8 @@ See also:
 > AppConfig[:spreadsheet_bulk_updater_apply_deletes] : `boolean`
 
 If enabled, the importer will drop subrecords (dates, extents, instances or
-notes) when all columns for that existing subrecord have no values.  As not all
-subrecord fields have a corresponding column in the spreadsheet, you may
+notes) when all spreadsheet columns for that existing subrecord have no values.
+As not all subrecord fields have a corresponding column in the spreadsheet, you may
 unwittingly drop a subrecord which has data in other fields.
 
 Default: `false`
