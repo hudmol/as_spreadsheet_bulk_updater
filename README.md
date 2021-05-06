@@ -4,6 +4,8 @@ An ArchivesSpace plugin for performing bulk updates on Archival Objects.
 
 Developed by Hudson Molonglo for The New School.
 
+This plugin is compatible with ArchivesSpace v2.8.1.
+
 ## Overview
 
 This plugin adds the ability to download a spreadsheet for a set of archival
