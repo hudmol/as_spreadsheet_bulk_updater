@@ -77,6 +77,7 @@ Unzip it:
 
     $ cd /path/to/archivesspace/plugins
     $ unzip as_spreadsheet_bulk_updater-vX.X.zip
+    $ mv as_spreadsheet_bulk_updater-vX.X as_spreadsheet_bulk_updater
 
 Enable the plugin by editing the file in `config/config.rb`:
 
