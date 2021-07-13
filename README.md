@@ -61,13 +61,19 @@ new note will be created.
 ## Prerequisites
 
 This plugin relies on the `digitization_work_order` plugin being enabled,
-available here: https://github.com/hudmol/digitization_work_order.
+available here:
+
+    https://github.com/hudmol/digitization_work_order.
+
+A MySQL database is also required.  For instructions on how to setup MySQL and ArchivesSpace please see:
+
+    https://archivesspace.github.io/tech-docs/provisioning/mysql.html
 
 ## Installation
 
 Download the latest release from the Releases tab in Github:
 
-  https://github.com/hudmol/as_spreadsheet_bulk_updater/releases
+    https://github.com/hudmol/as_spreadsheet_bulk_updater/releases
 
 Unzip the release and move it to:
 
@@ -92,7 +98,7 @@ Install dependencies by initializing the plugin:
 
 See also:
 
-  https://archivesspace.github.io/archivesspace/user/archivesspace-plug-ins/
+    https://archivesspace.github.io/tech-docs/customization/plugins.html
 
 ## Configuration
 
