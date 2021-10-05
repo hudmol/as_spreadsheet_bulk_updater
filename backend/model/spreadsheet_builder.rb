@@ -174,6 +174,12 @@ class SpreadsheetBuilder
       EnumColumn.new(:instance, :sub_container_type_3, 'container_type', :property_name => :instances, :i18n => "Grandchild Type"),     # Boo.
       StringColumn.new(:instance, :sub_container_indicator_3, :property_name => :instances, :i18n => "Grandchild Indicator"),           #
     ],
+    :related_accession => [
+      StringColumn.new(:related_accession, :id_0, :property_name => :related_accessions, :i18n => 'ID Part 1'),
+      StringColumn.new(:related_accession, :id_1, :property_name => :related_accessions, :i18n => 'ID Part 2'),
+      StringColumn.new(:related_accession, :id_2, :property_name => :related_accessions, :i18n => 'ID Part 3'),
+      StringColumn.new(:related_accession, :id_3, :property_name => :related_accessions, :i18n => 'ID Part 4'),
+    ],
   }
   # Conditions of Access, Scope and Contents, Bio/Hist note
   MULTIPART_NOTES_OF_INTEREST = [:accessrestrict, :scopecontent, :bioghist]
@@ -231,6 +237,16 @@ class SpreadsheetBuilder
 
       results[:instance] = instances_max + 3
 
+      # Related Accessions are special and only available if the as_accession_links plugin is enabled
+      if related_accesions_enabled?
+        related_accession_max = db[:accession_component_links_rlshp]
+                                  .filter(:archival_object_id => @ao_ids)
+                                  .group_and_count(:archival_object_id)
+                                  .max(:count) || 0
+
+         results[:related_accession] = [related_accession_max, 1].max
+      end
+
       MULTIPART_NOTES_OF_INTEREST.each do |note_type|
         notes_max = db[:note]
                       .filter(:archival_object_id => @ao_ids)
@@ -262,6 +278,12 @@ class SpreadsheetBuilder
   def instances_iterator
     @max_subrecord_counts.fetch(:instance).times do |i|
       yield(:instance, i)
+    end
+  end
+
+  def related_accessions_iterator
+    @max_subrecord_counts.fetch(:related_accession, 0).times do |i|
+      yield(:related_accesion, i)
     end
   end
 
@@ -301,6 +323,14 @@ class SpreadsheetBuilder
 
     instances_iterator do |_, index|
       FIELDS_OF_INTEREST.fetch(:instance).each do |column|
+        column = column.clone
+        column.index = index
+        result << column
+      end
+    end
+
+    related_accessions_iterator do |_, index|
+      FIELDS_OF_INTEREST.fetch(:related_accession).each do |column|
         column = column.clone
         column.index = index
         result << column
@@ -377,6 +407,28 @@ class SpreadsheetBuilder
             :sub_container_type_3 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_3_id], 'container_type'),
             :sub_container_indicator_3 => row[:sub_container_indicator_3],
           }
+        end
+
+        # Related Accessions are special
+        if related_accesions_enabled?
+          db[:accession_component_links_rlshp]
+            .join(:accession, Sequel.qualify(:accession, :id) => Sequel.qualify(:accession_component_links_rlshp, :accession_id))
+            .filter(Sequel.qualify(:accession_component_links_rlshp, :archival_object_id) => @ao_ids)
+            .select(
+              Sequel.qualify(:accession_component_links_rlshp, :archival_object_id),
+              Sequel.qualify(:accession, :identifier),
+            ).each do |row|
+            subrecord_datasets[:related_accession] ||= {}
+            subrecord_datasets[:related_accession][row[:archival_object_id]] ||= []
+
+            accession_data = {}
+            bits = Identifiers.parse(row[:identifier])
+            4.times do |index|
+              accession_data[:"id_#{index}"] = bits[index] || ''
+            end
+
+            subrecord_datasets[:related_accession][row[:archival_object_id]] << accession_data
+          end
         end
 
         # Notes
@@ -622,5 +674,9 @@ class SpreadsheetBuilder
         raise "Could not parse enumeration value from: #{spreadsheet_value}"
       end
     end
+  end
+
+  def related_accesions_enabled?
+    Object.const_defined?('ComponentAccessionLinks') && ArchivalObject.included_modules.include?(ComponentAccessionLinks)
   end
 end
