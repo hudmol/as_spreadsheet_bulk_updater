@@ -133,6 +133,9 @@ class SpreadsheetBuilder
     end
   end
 
+  class AccessionLookupColumn < StringColumn
+  end
+
   SUBRECORDS_OF_INTEREST = [:date, :extent]
   FIELDS_OF_INTEREST = {
     :archival_object => [
@@ -140,8 +143,13 @@ class SpreadsheetBuilder
       StringColumn.new(:archival_object, :lock_version, :header_label => "Version", :locked => true),
       StringColumn.new(:archival_object, :title, :width => 30),
       EnumColumn.new(:archival_object, :level, 'archival_record_level', :width => 15),
+      StringColumn.new(:archival_object, :ref_id, :width => 15),
+      StringColumn.new(:archival_object, :component_id, :width => 15),
+      StringColumn.new(:archival_object, :repository_processing_note, :width => 30),
+      BooleanColumn.new(:archival_object, :publish),
     ],
     :date => [
+      EnumColumn.new(:date, :label, 'date_label', :property_name => :dates),
       StringColumn.new(:date, :expression, :width => 15, :property_name => :dates),
       DateStringColumn.new(:date, :begin, :width => 10, :property_name => :dates),
       DateStringColumn.new(:date, :end, :width => 10, :property_name => :dates),
@@ -152,6 +160,8 @@ class SpreadsheetBuilder
       StringColumn.new(:extent, :number, :width => 15, :property_name => :extents),
       EnumColumn.new(:extent, :extent_type, 'extent_extent_type', :width => 15, :property_name => :extents),
       StringColumn.new(:extent, :container_summary, :width => 20, :property_name => :extents),
+      StringColumn.new(:extent, :physical_details, :width => 20, :property_name => :extents),
+      StringColumn.new(:extent, :dimensions, :width => 15, :property_name => :extents),
     ],
     :instance => [
       EnumColumn.new(:instance, :instance_type, 'instance_instance_type', :property_name => :instances, :skip_enum_values => ['digital_object']),
