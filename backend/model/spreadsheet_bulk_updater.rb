@@ -57,7 +57,7 @@ class SpreadsheetBulkUpdater
       # available to this resource
       @top_containers_in_resource = extract_top_containers_for_resource(db, resource_id)
 
-      if SpreadsheetBulkUpdater.create_missing_top_containers?
+      if create_missing_top_containers?
         top_containers_in_sheet = extract_top_containers_from_sheet(filename, column_by_path)
         create_missing_top_containers(top_containers_in_sheet, job)
       end
@@ -424,7 +424,7 @@ class SpreadsheetBulkUpdater
               sheet: SpreadsheetBuilder::SHEET_NAME,
               column: "instances/#{index}/top_container_indicator",
               row: row.row_number,
-              errors: ["Top container not found attached within resource: #{candidate_top_container.inspect}"],
+              errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container)],
             }
           end
         end
@@ -466,7 +466,7 @@ class SpreadsheetBulkUpdater
             sheet: SpreadsheetBuilder::SHEET_NAME,
             column: "instances/#{index}/top_container_indicator",
             row: row.row_number,
-            errors: ["Top container not found attached within resource: #{candidate_top_container.inspect}"],
+            errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container)],
           }
         end
 
@@ -563,7 +563,7 @@ class SpreadsheetBulkUpdater
       by_index = {}
       top_container_columns.each do |path, column|
         by_index[column.index] ||= TopContainerCandidate.new
-        by_index[column.index][column.name] = row.fetch(path)
+        by_index[column.index][column.name] = column.sanitise_incoming_value(row.fetch(path))
       end
 
       by_index.values.reject(&:empty?).each do |top_container|
@@ -707,8 +707,19 @@ class SpreadsheetBulkUpdater
     AppConfig.has_key?(:spreadsheet_bulk_updater_apply_deletes) && AppConfig[:spreadsheet_bulk_updater_apply_deletes] == true
   end
 
-  def self.create_missing_top_containers?
-    AppConfig.has_key?(:spreadsheet_bulk_updater_create_missing_top_containers) && AppConfig[:spreadsheet_bulk_updater_create_missing_top_containers] == true
+  def create_missing_top_containers?
+    if @job.job.has_key?('create_missing_top_containers')
+      @job.job['create_missing_top_containers']
+    elsif AppConfig.has_key?(:spreadsheet_bulk_updater_create_missing_top_containers)
+      AppConfig[:spreadsheet_bulk_updater_create_missing_top_containers]
+    else
+      false
+    end
+  end
+
+  def self.missing_container_error(container)
+    "Top container not found attached within resource: #{container.inspect}\n" +
+      "        *** Set 'Create Missing Top Containers' to create missing Top Containers instead of seeing this error. ***"
   end
 
 end
