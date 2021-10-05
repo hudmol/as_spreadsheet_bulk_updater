@@ -16,7 +16,15 @@ class SpreadsheetBulkUpdater
         'jsonmodel_type' => 'sub_container',
         'top_container' => {'ref' => nil},
       }
-    }
+    },
+    'note_multipart' => {
+      'jsonmodel_type' => 'note_multipart',
+      'subnotes' => [],
+    },
+    'note_singlepart' => {
+      'jsonmodel_type' => 'note_singlepart',
+      'content' => [],
+    },
   }
 
   INSTANCE_FIELD_MAPPINGS = [
@@ -107,7 +115,18 @@ class SpreadsheetBulkUpdater
 
           # notes
         elsif column.is_a?(SpreadsheetBuilder::NoteContentColumn) || SpreadsheetBuilder::EXTRA_NOTE_FIELDS.has_key?(column.jsonmodel)
-          record_changed = apply_notes_column(row, column, value, ao_json, notes_by_type) || record_changed
+          note_type = nil
+          note_jsonmodel = nil
+
+          if column.is_a?(SpreadsheetBuilder::NoteContentColumn)
+            note_type = column.name
+            note_jsonmodel = column.note_jsonmodel
+          elsif SpreadsheetBuilder::EXTRA_NOTE_FIELDS.has_key?(column.jsonmodel)
+            note_type = column.jsonmodel
+            note_jsonmodel = SpreadsheetBuilder::MULTIPART_NOTES_OF_INTEREST.include?(note_type) ? 'note_multipart' : 'note_singlepart'
+          end
+
+          record_changed = apply_notes_column(row, column, value, ao_json, notes_by_type, note_jsonmodel, note_type) || record_changed
 
           # subrecords
         elsif SpreadsheetBuilder::SUBRECORDS_OF_INTEREST.include?(column.jsonmodel)
@@ -204,14 +223,12 @@ class SpreadsheetBulkUpdater
     record_changed
   end
 
-  def apply_notes_column(row, column, value, ao_json, notes_by_type)
+  def apply_notes_column(row, column, value, ao_json, notes_by_type, note_jsonmodel, note_type)
     record_changed = false
-
-    note_type = column.is_a?(SpreadsheetBuilder::NoteContentColumn) ? column.name : column.jsonmodel
 
     unless notes_by_type.has_key?(note_type)
       notes_by_type[note_type] = ao_json.notes
-                                   .select{|note| note['jsonmodel_type'] == 'note_multipart' && note['type'] == note_type.to_s}
+                                   .select{|note| note['jsonmodel_type'] == note_jsonmodel.to_s && note['type'] == note_type.to_s}
     end
 
     clean_value = column.sanitise_incoming_value(value)
@@ -222,11 +239,9 @@ class SpreadsheetBulkUpdater
       # we need to create a new note!
       record_changed = true
 
-      note_to_update = SUBRECORD_DEFAULTS.fetch(column.jsonmodel.to_s, {}).merge({
-                                                                                   'jsonmodel_type' => 'note_multipart',
-                                                                                   'type' => note_type.to_s,
-                                                                                   'subnotes' => [],
-                                                                                 })
+      note_to_update = SUBRECORD_DEFAULTS.fetch(note_jsonmodel.to_s, {}).merge({
+                                                                                 'type' => note_type.to_s,
+                                                                               })
 
       notes_by_type[note_type][column.index] = note_to_update
       ao_json.notes << note_to_update
@@ -235,9 +250,13 @@ class SpreadsheetBulkUpdater
     if note_to_update
       # Apply content
       if column.is_a?(SpreadsheetBuilder::NoteContentColumn)
-        # Update the first text note
-        if (first_text_note = note_to_update['subnotes'].detect{|subnote| subnote['jsonmodel_type'] == 'note_text'})
-          if clean_value != first_text_note['content']
+        first_text_note = column.multipart? ?
+                            note_to_update['subnotes'].detect{|subnote| subnote['jsonmodel_type'] == 'note_text'} :
+                            note_to_update['content'].first
+
+        if first_text_note
+          current_note_value = column.multipart? ? first_text_note['content'] : first_text_note
+          if clean_value != current_note_value
             record_changed = true
 
             if clean_value.to_s.empty? && !SpreadsheetBulkUpdater.apply_deletes?
@@ -248,17 +267,26 @@ class SpreadsheetBulkUpdater
                 errors: ["Deleting a note is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
               }
             else
-              first_text_note['content'] = clean_value
+              if column.multipart?
+                first_text_note['content'] = clean_value
+              else
+                note_to_update['content'][0] = clean_value
+              end
             end
           end
 
-          # Add a text note!
+            # Add a text note!
         elsif !clean_value.to_s.empty?
           record_changed = true
-          note_to_update['subnotes'] << SUBRECORD_DEFAULTS.fetch('note_text', {}).merge({
-                                                                                          'jsonmodel_type' => 'note_text',
-                                                                                          'content' => clean_value
-                                                                                        })
+
+          if column.multipart?
+            note_to_update['subnotes'] << SUBRECORD_DEFAULTS.fetch('note_text', {}).merge({
+                                                                                            'jsonmodel_type' => 'note_text',
+                                                                                            'content' => clean_value
+                                                                                          })
+          else
+            note_to_update['content'] << clean_value
+          end
         end
 
       # Update the extra note field

@@ -96,12 +96,23 @@ class SpreadsheetBuilder
   end
 
   class NoteContentColumn < StringColumn
+    attr_accessor :note_jsonmodel
+
+    def initialize(jsonmodel, name, note_jsonmodel = 'note_multipart', opts = {})
+      super(jsonmodel, name, opts)
+      @note_jsonmodel = note_jsonmodel
+    end
+
     def header_label
-      "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.#{@name}")} - #{index + 1} - Content"
+      "#{I18n.t('note._singular')} #{I18n.t("enumerations.#{@note_jsonmodel}_type.#{@name}")} - #{index + 1} - Content"
     end
 
     def path
       [@jsonmodel.to_s, @name.to_s, @index.to_s, 'content'].join('/')
+    end
+
+    def multipart?
+      @note_jsonmodel == 'note_multipart'
     end
   end
 
@@ -181,8 +192,27 @@ class SpreadsheetBuilder
       StringColumn.new(:related_accession, :id_3, :property_name => :related_accessions, :i18n => 'ID Part 4'),
     ],
   }
-  # Conditions of Access, Scope and Contents, Bio/Hist note
-  MULTIPART_NOTES_OF_INTEREST = [:accessrestrict, :scopecontent, :bioghist]
+
+  # FIXME pull from enum to allow all values?
+  MULTIPART_NOTES_OF_INTEREST = [
+    :accessrestrict,
+    :scopecontent,
+    :bioghist,
+    :accruals,
+    :dimensions,
+    :altformavail,
+    :odd,
+    :phystech,
+    :processinfo,
+    :relatedmaterial,
+    :separatedmaterial,
+  ]
+
+  # FIXME pull from enum to allow all values?
+  SINGLEPART_NOTES_OF_INTEREST = [
+    :abstract,
+    :physdesc,
+  ]
 
   EXTRA_NOTE_FIELDS = {
     :accessrestrict => [
@@ -247,10 +277,10 @@ class SpreadsheetBuilder
          results[:related_accession] = [related_accession_max, 1].max
       end
 
-      MULTIPART_NOTES_OF_INTEREST.each do |note_type|
+      (MULTIPART_NOTES_OF_INTEREST + SINGLEPART_NOTES_OF_INTEREST).each do |note_type|
         notes_max = db[:note]
                       .filter(:archival_object_id => @ao_ids)
-                      .filter(Sequel.like(:notes, '%"type":"'+note_type.to_s+'"%'))
+                      .filter(Sequel.function(:json_extract, :notes, '$.type') => note_type.to_s)
                       .group_and_count(:archival_object_id)
                       .max(:count) || 0
 
@@ -291,7 +321,14 @@ class SpreadsheetBuilder
     MULTIPART_NOTES_OF_INTEREST
       .map do |note_type|
       @max_subrecord_counts.fetch(note_type).times do |i|
-        yield(note_type, i)
+        yield('note_multipart', note_type, i)
+      end
+    end
+
+    SINGLEPART_NOTES_OF_INTEREST
+      .map do |note_type|
+      @max_subrecord_counts.fetch(note_type).times do |i|
+        yield('note_singlepart', note_type, i)
       end
     end
   end
@@ -337,8 +374,8 @@ class SpreadsheetBuilder
       end
     end
 
-    notes_iterator do |note_type, index|
-      column = NoteContentColumn.new(:note, note_type, :width => 30)
+    notes_iterator do |jsonmodel_type, note_type, index|
+      column = NoteContentColumn.new(:note, note_type, jsonmodel_type, :width => 30)
       column.index = index
       result << column
 
@@ -432,10 +469,12 @@ class SpreadsheetBuilder
         end
 
         # Notes
+        # FIXME could avoid extra queries as we know which ones have actual notes when checking for max
         MULTIPART_NOTES_OF_INTEREST.each do |note_type|
           db[:note]
             .filter(:archival_object_id => batch)
-            .filter(Sequel.like(:notes, '%"type":"'+note_type.to_s+'"%'))
+            .filter(Sequel.function(:json_extract, :notes, '$.jsonmodel_type') => 'note_multipart')
+            .filter(Sequel.function(:json_extract, :notes, '$.type') => note_type.to_s)
             .select(:archival_object_id, :notes)
             .order(:archival_object_id, :id)
             .each do |row|
@@ -460,6 +499,29 @@ class SpreadsheetBuilder
               end
 
             end
+
+            subrecord_datasets[note_type][row[:archival_object_id]] << note_data
+          end
+        end
+
+        SINGLEPART_NOTES_OF_INTEREST.each do |note_type|
+          db[:note]
+            .filter(:archival_object_id => batch)
+            .filter(Sequel.function(:json_extract, :notes, '$.jsonmodel_type') => 'note_singlepart')
+            .filter(Sequel.function(:json_extract, :notes, '$.type') => note_type.to_s)
+            .select(:archival_object_id, :notes)
+            .order(:archival_object_id, :id)
+            .each do |row|
+            note_json = ASUtils.json_parse(row[:notes])
+            subrecord_datasets[note_type] ||= {}
+            subrecord_datasets[note_type][row[:archival_object_id]] ||= []
+
+            # take the first note_text for each note
+            text_subnote = Array(note_json['content']).first
+
+            note_data = {
+              :content => text_subnote,
+            }
 
             subrecord_datasets[note_type][row[:archival_object_id]] << note_data
           end
@@ -613,10 +675,18 @@ class SpreadsheetBuilder
       index = Integer($2)
       field = $3.intern
 
-      raise "Column definition not found for #{path}" unless MULTIPART_NOTES_OF_INTEREST.include?(note_type)
+      note_jsonmodel = nil
+
+      if MULTIPART_NOTES_OF_INTEREST.include?(note_type)
+        note_jsonmodel = 'note_multipart'
+      elsif SINGLEPART_NOTES_OF_INTEREST.include?(note_type)
+        note_jsonmodel = 'note_singlepart'
+      end
+
+      raise "Column definition not found for #{path}" if note_jsonmodel.nil?
 
       column = if field == :content
-                 NoteContentColumn.new(:note, note_type)
+                 NoteContentColumn.new(:note, note_type, note_jsonmodel)
                else
                  EXTRA_NOTE_FIELDS.fetch(note_type, {}).detect{|col| col.name.intern == field}
                end
