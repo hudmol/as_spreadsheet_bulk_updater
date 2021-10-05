@@ -445,10 +445,7 @@ class SpreadsheetBulkUpdater
         to_create = {}
 
         if (accession_uri = @accessions_in_sheet[candidate])
-          if existing_subrecord.fetch('ref') != accession_uri
-            existing_subrecord['ref'] = accession_uri
-            related_accession_changed = true
-          end
+          to_create['ref'] = accession_uri
         else
           errors << {
             sheet: SpreadsheetBuilder::SHEET_NAME,
