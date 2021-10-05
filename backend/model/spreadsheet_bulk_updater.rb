@@ -57,6 +57,10 @@ class SpreadsheetBulkUpdater
       # available to this resource
       @top_containers_in_resource = extract_top_containers_for_resource(db, resource_id)
 
+      if SpreadsheetBuilder.related_accessions_enabled?
+        @accessions_in_sheet = extract_accessions_from_sheet(db, filename, column_by_path)
+      end
+
       if create_missing_top_containers?
         top_containers_in_sheet = extract_top_containers_from_sheet(filename, column_by_path)
         create_missing_top_containers(top_containers_in_sheet, job)
@@ -89,6 +93,7 @@ class SpreadsheetBulkUpdater
 
     subrecord_updates_by_index = {}
     instance_updates_by_index = {}
+    related_accession_updates_by_index = {}
 
     notes_by_type = {}
 
@@ -120,11 +125,20 @@ class SpreadsheetBulkUpdater
           clean_value = column.sanitise_incoming_value(value)
 
           instance_updates_by_index[column.index][column.name.to_s] = clean_value
+
+        # related accessions
+        else
+          related_accession_updates_by_index[column.index] ||= {}
+          related_accession_updates_by_index[column.index][column.name.to_s] = column.sanitise_incoming_value(value)
         end
       end
 
       record_changed = apply_sub_record_updates(row, ao_json, subrecord_updates_by_index) || record_changed
       record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index) ||  record_changed
+
+      if SpreadsheetBuilder.related_accessions_enabled?
+        record_changed = apply_related_accession_updates(row, ao_json, related_accession_updates_by_index) ||  record_changed
+      end
 
       if SpreadsheetBulkUpdater.apply_deletes?
         record_changed = delete_empty_notes(ao_json) || record_changed
@@ -357,6 +371,104 @@ class SpreadsheetBulkUpdater
     record_changed
   end
 
+  def apply_related_accession_updates(row, ao_json, related_accession_updates_by_index)
+    record_changed = false
+
+    to_apply = []
+    related_accessions_changed = false
+
+    related_accession_updates_by_index.each do |index, updates|
+      related_accession_changed = false
+
+      # the accession
+      candidate = AccessionCandidate.new(updates['id_0'],
+                                         updates['id_1'],
+                                         updates['id_2'],
+                                         updates['id_3'])
+
+      if (existing_subrecord = ao_json.accession_links.fetch(index, false))
+        replacement_subrecord = {}
+
+        if updates.all?{|_, value| value.to_s.empty? }
+          if SpreadsheetBulkUpdater.apply_deletes?
+            # DELETE!
+            record_changed = true
+            related_accessions_changed = true
+          else
+            errors << {
+              sheet: SpreadsheetBuilder::SHEET_NAME,
+              column: "related_accessions/#{index}",
+              row: row.row_number,
+              errors: ["Deleting a related accession is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+            }
+          end
+
+          next
+        end
+
+        if candidate.empty?
+          # assume this was intentional and let validation do its thing
+          replacement_subrecord['ref'] = nil
+        else
+          if (accession_uri = @accessions_in_sheet[candidate])
+            if existing_subrecord.fetch('ref') != accession_uri
+              replacement_subrecord['ref'] = accession_uri
+              related_accession_changed = true
+            end
+          else
+            errors << {
+              sheet: SpreadsheetBuilder::SHEET_NAME,
+              column: "related_accession/#{index}/id_0",
+              row: row.row_number,
+              errors: ["Accession not found for identifier: #{candidate.inspect}"],
+            }
+          end
+        end
+
+        # did anything change?
+        if related_accession_changed
+          record_changed = true
+          related_accessions_changed = true
+        end
+
+        # ready to apply
+        to_apply << replacement_subrecord
+      else
+        if updates.values.all?{|v| v.to_s.empty? }
+          # Nothing to do!
+          next
+        end
+
+        record_changed = true
+        related_accessions_changed = true
+
+        to_create = {}
+
+        if (accession_uri = @accessions_in_sheet[candidate])
+          if existing_subrecord.fetch('ref') != accession_uri
+            existing_subrecord['ref'] = accession_uri
+            related_accession_changed = true
+          end
+        else
+          errors << {
+            sheet: SpreadsheetBuilder::SHEET_NAME,
+            column: "related_accession/#{index}/id_0",
+            row: row.row_number,
+            errors: ["Accession not found for identifier: #{candidate.inspect}"],
+          }
+        end
+
+        to_apply << to_create
+      end
+    end
+
+    if related_accessions_changed
+      ao_json.accession_links = to_apply
+    end
+
+    record_changed
+  end
+
   def apply_instance_updates(row, ao_json, instance_updates_by_index)
     record_changed = false
 
@@ -533,6 +645,24 @@ class SpreadsheetBulkUpdater
     end
   end
 
+  AccessionCandidate = Struct.new(:id_0, :id_1, :id_2, :id_3) do
+    def empty?
+      id_0.nil? && id_1.nil? && id_2.nil? && id_3.nil?
+    end
+
+    def to_json
+      ASUtils.to_json([id_0, id_1, id_2, id_3])
+    end
+
+    def to_s
+      "#<SpreadsheetBulkUpdater::AccessionCandidate #{self.to_h.inspect}>"
+    end
+
+    def inspect
+      to_s
+    end
+  end
+
   def create_missing_top_containers(in_sheet, job)
     (in_sheet.keys - @top_containers_in_resource.keys).each do |candidate_to_create|
       tc_json = JSONModel::JSONModel(:top_container).new
@@ -572,6 +702,43 @@ class SpreadsheetBulkUpdater
     end
 
     top_containers
+  end
+
+  def extract_accessions_from_sheet(db, filename, column_by_path)
+    accessions = {}
+
+    related_accession_columns = {}
+    column_by_path.each do |path, column|
+      if column.jsonmodel == :related_accession
+        related_accession_columns[path] = column
+      end
+    end
+
+    each_row(filename) do |row|
+      next if row.empty?
+
+      by_index = {}
+      related_accession_columns.each do |path, column|
+        by_index[column.index] ||= AccessionCandidate.new
+        by_index[column.index][column.name] = column.sanitise_incoming_value(row.fetch(path))
+      end
+
+      by_index.values.reject(&:empty?).each do |candidate|
+        accessions[candidate] = nil
+      end
+    end
+
+    # lookup URIs for candidates
+    db[:accession]
+      .filter(:identifier => accessions.keys.map{|candidate| candidate.to_json})
+      .select(:id, :repo_id, :identifier)
+      .each do |row|
+      bits = Identifiers.parse(row[:identifier])
+      candidate = AccessionCandidate.new(bits[0], bits[1].to_s, bits[2], bits[3])
+      accessions[candidate] = JSONModel::JSONModel(:accession).uri_for(row[:id], :repo_id => row[:repo_id])
+    end
+
+    accessions
   end
 
   def extract_top_containers_for_resource(db, resource_id)

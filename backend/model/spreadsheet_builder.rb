@@ -238,7 +238,7 @@ class SpreadsheetBuilder
       results[:instance] = instances_max + 3
 
       # Related Accessions are special and only available if the as_accession_links plugin is enabled
-      if related_accesions_enabled?
+      if SpreadsheetBuilder.related_accessions_enabled?
         related_accession_max = db[:accession_component_links_rlshp]
                                   .filter(:archival_object_id => @ao_ids)
                                   .group_and_count(:archival_object_id)
@@ -410,7 +410,7 @@ class SpreadsheetBuilder
         end
 
         # Related Accessions are special
-        if related_accesions_enabled?
+        if SpreadsheetBuilder.related_accessions_enabled?
           db[:accession_component_links_rlshp]
             .join(:accession, Sequel.qualify(:accession, :id) => Sequel.qualify(:accession_component_links_rlshp, :accession_id))
             .filter(Sequel.qualify(:accession_component_links_rlshp, :archival_object_id) => @ao_ids)
@@ -676,7 +676,7 @@ class SpreadsheetBuilder
     end
   end
 
-  def related_accesions_enabled?
+  def self.related_accessions_enabled?
     Object.const_defined?('ComponentAccessionLinks') && ArchivalObject.included_modules.include?(ComponentAccessionLinks)
   end
 end
