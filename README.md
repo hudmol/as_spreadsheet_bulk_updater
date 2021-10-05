@@ -25,7 +25,7 @@ simply select your XLSX file in the presented form and click "Start Job".
 
 ### Fields and Subrecords
 
-Currently the following Archival Object fields and subrecords are exposed in the 
+Currently the following Archival Object fields and subrecords are exposed in the
 XLSX spreadsheet.
 
 Archival Object fields:
@@ -65,7 +65,8 @@ available here:
 
     https://github.com/hudmol/digitization_work_order.
 
-A MySQL database is also required.  For instructions on how to setup MySQL and ArchivesSpace please see:
+A MySQL database is also required.  For instructions on how to setup MySQL and
+ArchivesSpace please see:
 
     https://archivesspace.github.io/tech-docs/provisioning/mysql.html
 
@@ -106,8 +107,8 @@ See also:
 
 If enabled, the importer will drop subrecords (dates, extents, instances or
 notes) when all spreadsheet columns for that existing subrecord have no values.
-As not all subrecord fields have a corresponding column in the spreadsheet, you may
-unwittingly drop a subrecord which has data in other fields.
+As not all subrecord fields have a corresponding column in the spreadsheet, you
+may unwittingly drop a subrecord which has data in other fields.
 
 Default: `false`
 
@@ -117,6 +118,9 @@ By default, the importer will throw an error when it finds a top container
 in the spreadsheet that is not attached within the current resource's hierarchy.
 
 When enabled, those missing top containers are created on demand.
+
+This configuration setting can be overridden by providing a
+`create_missing_top_containers` parameter to the import job.
 
 Default: `false`
 
