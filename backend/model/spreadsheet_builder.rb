@@ -2,7 +2,7 @@ require 'write_xlsx'
 
 class SpreadsheetBuilder
 
-  def initialize(resource_uri, ao_uris, min_subrecords, extra_subrecords, extra_notes)
+  def initialize(resource_uri, ao_uris, min_subrecords, extra_subrecords, min_notes)
     @resource_uri = resource_uri
     @resource_id = JSONModel.parse_reference(@resource_uri).fetch(:id)
     @ao_uris = []
@@ -16,7 +16,7 @@ class SpreadsheetBuilder
       end
     end
 
-    @subrecord_counts = calculate_subrecord_counts(min_subrecords, extra_subrecords, extra_notes)
+    @subrecord_counts = calculate_subrecord_counts(min_subrecords, extra_subrecords, min_notes)
   end
 
   BATCH_SIZE = 200
