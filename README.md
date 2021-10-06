@@ -130,7 +130,7 @@ Here are some thoughts about what could be added in future versions:
 
 -  Export more fields in the spreadsheet and make it configurable
 -  Support adding and deleting rows
--  Provide some control over the rules for how many subrecords are exported
+-  ~~Provide some control over the rules for how many subrecords are exported~~
 -  Provide a direct link to create the import job
 -  Provide a way to soft lock the resource to stop others editing it while you fiddle with the spreadsheet
 -  Think about rationalizing the dependency on the digitization work order plugin
