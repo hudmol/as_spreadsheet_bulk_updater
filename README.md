@@ -38,9 +38,9 @@ Subrecords:
 * instances
 
 The spreadsheet contains grouped columns for each existing subrecord plus at
-least 3 empty sets to allow creation of new subrecords on the archival object.
-The columns provide access to a subset of the subrecord fields, whereby any
-mandatory fields not provided are given default values upon import.
+least 3 empty sets (by default) to allow creation of new subrecords on the
+archival object. The columns provide access to a subset of the subrecord fields,
+whereby any mandatory fields not provided are given default values upon import.
 
 If the values provided do not map to an existing subrecord, a new subrecord will
 be created.
@@ -54,9 +54,9 @@ The spreadsheet exposes the first and only first `note_text` for each of the
 existing note records for the note types above. Restriction fields for the note
 type `accessrestrict` are also exposed.
 
-Minimally 2 sets of columns for each note type are provided. Similarly for
-subrecords, if values for a note at an index do not map to an existing note, a
-new note will be created.
+Minimally 2 sets (by default) of columns for each note type are provided.
+Similarly for subrecords, if values for a note at an index do not map to an
+existing note, a new note will be created.
 
 ## Prerequisites
 
