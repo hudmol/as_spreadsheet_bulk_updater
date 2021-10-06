@@ -10,7 +10,13 @@ class SpreadsheetBulkUpdaterController < ApplicationController
 
   def download
     uri = "/plugins/spreadsheet_bulk_updater/repositories/#{session[:repo_id]}/generate_spreadsheet"
-    args = {'uri[]' => JSON.parse(params[:selected]), 'resource_uri' => params[:resource]}
+    args = {
+      'uri[]' => JSON.parse(params[:selected]),
+      'resource_uri' => params[:resource],
+      'min_subrecords' => params[:min_subrecords],
+      'extra_subrecords' => params[:extra_subrecords],
+      'min_notes' => params[:min_notes]
+    }
 
     generate_spreadsheet(uri, args)
   end

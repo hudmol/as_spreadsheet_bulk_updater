@@ -20,9 +20,64 @@
 
   <div id='work_order_table'></div>
 
-  <%= form_tag({:action => :download}, {:method => 'post', :id => "work_order_form"}) do |form| %>
+  <%= form_tag({:action => :download}, {:method => 'post', :id => "work_order_form"}) do %>
     <%= hidden_field_tag "resource", @uri %>
     <div class="report-fields"></div>
+
+    <hr/>
+
+    <div class="row">
+      <div class="form-group">
+        <label class="col-sm-2 control-label">Minimum subrecords</label>
+        <div class="col-sm-1">
+          <select class="form-control" name="min_subrecords">
+            <option value="0">0</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected="selected">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+        <label class="col-sm-6 help-inline">The minimum number of subrecords of each type to be included.</label>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label class="col-sm-2 control-label">Extra subrecords</label>
+        <div class="col-sm-1">
+          <select class="form-control" name="extra_subrecords">
+            <option value="0">0</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected="selected">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+        <label class="col-sm-6 help-inline">
+          The number of subrecords to include in addition to the greatest number found in any of the selected records.
+        </label>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label class="col-sm-2 control-label">Minimum notes</label>
+        <div class="col-sm-1">
+          <select class="form-control" name="min_notes">
+            <option value="0">0</option>
+            <option value="1">1</option>
+            <option value="2" selected="selected">2</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+        <label class="col-sm-6 help-inline">The minimum number of note subrecords of each type to be included.</label>
+      </div>
+    </div>
+
+    <hr/>
 
     <div class="form-group">
       <button class="btn btn-primary submit-btn" disabled>Download Spreadsheet</button>
