@@ -4,11 +4,18 @@ class ArchivesSpaceService < Sinatra::Base
     .description("Return XLSX")
     .params(["repo_id", :repo_id],
             ["uri", [String], "The uris of the records to include in the report"],
+            ["min_subrecords", Integer, "The minimum number of subrecords to include", :default => 0],
+            ["extra_subrecords", Integer, "The number of extra subrecords to include", :default => 3],
+            ["min_notes", Integer, "The minimum number of note subrecords to include", :default => 2],
             ["resource_uri", String, "The resource URI"])
     .permissions([:view_repository])
     .returns([200, "spreadsheet"]) \
   do
-    builder = SpreadsheetBuilder.new(params[:resource_uri], params[:uri])
+    builder = SpreadsheetBuilder.new(params[:resource_uri],
+                                     params[:uri],
+                                     params[:min_subrecords],
+                                     params[:extra_subrecords],
+                                     params[:min_notes])
 
     [
       200,

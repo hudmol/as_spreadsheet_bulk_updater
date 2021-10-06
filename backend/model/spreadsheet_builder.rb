@@ -2,7 +2,7 @@ require 'write_xlsx'
 
 class SpreadsheetBuilder
 
-  def initialize(resource_uri, ao_uris)
+  def initialize(resource_uri, ao_uris, min_subrecords, extra_subrecords, extra_notes)
     @resource_uri = resource_uri
     @resource_id = JSONModel.parse_reference(@resource_uri).fetch(:id)
     @ao_uris = []
@@ -16,7 +16,7 @@ class SpreadsheetBuilder
       end
     end
 
-    @max_subrecord_counts = calculate_max_subrecords
+    @subrecord_counts = calculate_subrecord_counts(min_subrecords, extra_subrecords, extra_notes)
   end
 
   BATCH_SIZE = 200
@@ -244,7 +244,7 @@ class SpreadsheetBuilder
     ]
   }
 
-  def calculate_max_subrecords
+  def calculate_subrecord_counts(min_subrecords, extra_subrecords, min_notes)
     results = {}
 
     DB.open do |db|
@@ -254,8 +254,8 @@ class SpreadsheetBuilder
                 .group_and_count(:archival_object_id)
                 .max(:count) || 0
 
-        # Notes, Extent: At least 3 more than the max
-        results[subrecord] = max + 3
+        # Dates, extents: At least min_subrecords or extra_subrecords more than the max
+        results[subrecord] = [min_subrecords, max + extra_subrecords].max
       end
 
       # Instances are special
@@ -265,7 +265,7 @@ class SpreadsheetBuilder
         .group_and_count(:archival_object_id)
         .max(:count) || 0
 
-      results[:instance] = instances_max + 3
+      results[:instance] = [min_subrecords, instances_max + extra_subrecords].max
 
       # Related Accessions are special and only available if the as_accession_links plugin is enabled
       if SpreadsheetBuilder.related_accessions_enabled?
@@ -284,8 +284,8 @@ class SpreadsheetBuilder
                       .group_and_count(:archival_object_id)
                       .max(:count) || 0
 
-        # Notes: At least 2 of each type
-        results[note_type] = [notes_max, 2].max
+        # Notes: At least min_notes of each type
+        results[note_type] = [min_notes, notes_max].max
       end
     end
 
@@ -299,20 +299,20 @@ class SpreadsheetBuilder
   def subrecords_iterator
     SUBRECORDS_OF_INTEREST
       .map do |subrecord|
-      @max_subrecord_counts.fetch(subrecord).times do |i|
+      @subrecord_counts.fetch(subrecord).times do |i|
         yield(subrecord, i)
       end
     end
   end
 
   def instances_iterator
-    @max_subrecord_counts.fetch(:instance).times do |i|
+    @subrecord_counts.fetch(:instance).times do |i|
       yield(:instance, i)
     end
   end
 
   def related_accessions_iterator
-    @max_subrecord_counts.fetch(:related_accession, 0).times do |i|
+    @subrecord_counts.fetch(:related_accession, 0).times do |i|
       yield(:related_accesion, i)
     end
   end
@@ -320,14 +320,14 @@ class SpreadsheetBuilder
   def notes_iterator
     MULTIPART_NOTES_OF_INTEREST
       .map do |note_type|
-      @max_subrecord_counts.fetch(note_type).times do |i|
+      @subrecord_counts.fetch(note_type).times do |i|
         yield('note_multipart', note_type, i)
       end
     end
 
     SINGLEPART_NOTES_OF_INTEREST
       .map do |note_type|
-      @max_subrecord_counts.fetch(note_type).times do |i|
+      @subrecord_counts.fetch(note_type).times do |i|
         yield('note_singlepart', note_type, i)
       end
     end
