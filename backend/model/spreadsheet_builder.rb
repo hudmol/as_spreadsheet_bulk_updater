@@ -395,6 +395,7 @@ class SpreadsheetBuilder
         base_fields = [:id, :lock_version] + FIELDS_OF_INTEREST.fetch(:archival_object).map{|field| field.column}
         base = ArchivalObject
                 .filter(:id => batch)
+                .order(Sequel.lit("FIELD(id, #{batch.join(',')})"))
                 .select(*base_fields)
 
         subrecord_datasets = {}
