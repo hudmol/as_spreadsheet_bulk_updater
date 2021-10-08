@@ -472,7 +472,7 @@ class SpreadsheetBuilder
           .join(:sub_container, Sequel.qualify(:sub_container, :instance_id) => Sequel.qualify(:instance, :id))
           .join(:top_container_link_rlshp, Sequel.qualify(:top_container_link_rlshp, :sub_container_id) => Sequel.qualify(:sub_container, :id))
           .join(:top_container, Sequel.qualify(:top_container, :id) => Sequel.qualify(:top_container_link_rlshp, :top_container_id))
-          .filter(Sequel.qualify(:instance, :archival_object_id) => @ao_ids)
+          .filter(Sequel.qualify(:instance, :archival_object_id) => batch)
           .filter(Sequel.~(Sequel.qualify(:instance, :instance_type_id) => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object')))
           .select(
             Sequel.as(Sequel.qualify(:instance, :archival_object_id), :archival_object_id),
@@ -505,7 +505,7 @@ class SpreadsheetBuilder
         if SpreadsheetBuilder.related_accessions_enabled?
           db[:accession_component_links_rlshp]
             .join(:accession, Sequel.qualify(:accession, :id) => Sequel.qualify(:accession_component_links_rlshp, :accession_id))
-            .filter(Sequel.qualify(:accession_component_links_rlshp, :archival_object_id) => @ao_ids)
+            .filter(Sequel.qualify(:accession_component_links_rlshp, :archival_object_id) => batch)
             .select(
               Sequel.qualify(:accession_component_links_rlshp, :archival_object_id),
               Sequel.qualify(:accession, :identifier),
