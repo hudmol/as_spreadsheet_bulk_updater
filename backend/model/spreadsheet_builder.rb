@@ -555,62 +555,42 @@ class SpreadsheetBuilder
         end
 
         # Notes
-        # FIXME could avoid extra queries as we know which ones have actual notes when checking for max
-        MULTIPART_NOTES_OF_INTEREST.each do |note_type|
-          db[:note]
-            .filter(:archival_object_id => batch)
-            .filter(Sequel.function(:json_extract, :notes, '$.jsonmodel_type') => 'note_multipart')
-            .filter(Sequel.function(:json_extract, :notes, '$.type') => note_type.to_s)
-            .select(:archival_object_id, :notes)
-            .order(:archival_object_id, :id)
-            .each do |row|
-            note_json = ASUtils.json_parse(row[:notes])
-            subrecord_datasets[note_type] ||= {}
-            subrecord_datasets[note_type][row[:archival_object_id]] ||= []
+        db[:note]
+          .filter(:archival_object_id => batch)
+          .select(:archival_object_id, :notes)
+          .order(:archival_object_id, :id)
+          .each do |row|
+          note_json = ASUtils.json_parse(row[:notes])
 
-            # take the first note_text for each note
+          note_type = note_json.fetch('type').intern
+
+          next unless (MULTIPART_NOTES_OF_INTEREST + SINGLEPART_NOTES_OF_INTEREST).include?(note_type)
+
+          subrecord_datasets[note_type] ||= {}
+          subrecord_datasets[note_type][row[:archival_object_id]] ||= []
+
+          note_data = {}
+
+          if MULTIPART_NOTES_OF_INTEREST.include?(note_type)
             text_subnote = Array(note_json['subnotes']).detect{|subnote| subnote['jsonmodel_type'] == 'note_text'}
 
-            note_data = {
-              :content => text_subnote ? text_subnote['content'] : nil,
-            }
+            note_data[:content] = text_subnote ? text_subnote['content'] : nil
+          elsif SINGLEPART_NOTES_OF_INTEREST.include?(note_type)
+            note_data[:content] = Array(note_json['content']).first
+          end
 
-            EXTRA_NOTE_FIELDS.fetch(note_type, []).each do |extra_column|
-              value = Array(note_json.fetch(extra_column.property_name.to_s, {}).fetch(extra_column.name.to_s, nil)).first
+          EXTRA_NOTE_FIELDS.fetch(note_type, []).each do |extra_column|
+            value = Array(note_json.fetch(extra_column.property_name.to_s, {}).fetch(extra_column.name.to_s, nil)).first
 
-              if extra_column.is_a?(EnumColumn)
-                note_data[extra_column.name] = EnumMapper.enum_to_spreadsheet_value(value, extra_column.enum_name)
-              else
-                note_data[extra_column.name] = extra_column.value_for(value)
-              end
-
+            if extra_column.is_a?(EnumColumn)
+              note_data[extra_column.name] = EnumMapper.enum_to_spreadsheet_value(value, extra_column.enum_name)
+            else
+              note_data[extra_column.name] = extra_column.value_for(value)
             end
 
-            subrecord_datasets[note_type][row[:archival_object_id]] << note_data
           end
-        end
 
-        SINGLEPART_NOTES_OF_INTEREST.each do |note_type|
-          db[:note]
-            .filter(:archival_object_id => batch)
-            .filter(Sequel.function(:json_extract, :notes, '$.jsonmodel_type') => 'note_singlepart')
-            .filter(Sequel.function(:json_extract, :notes, '$.type') => note_type.to_s)
-            .select(:archival_object_id, :notes)
-            .order(:archival_object_id, :id)
-            .each do |row|
-            note_json = ASUtils.json_parse(row[:notes])
-            subrecord_datasets[note_type] ||= {}
-            subrecord_datasets[note_type][row[:archival_object_id]] ||= []
-
-            # take the first note_text for each note
-            text_subnote = Array(note_json['content']).first
-
-            note_data = {
-              :content => text_subnote,
-            }
-
-            subrecord_datasets[note_type][row[:archival_object_id]] << note_data
-          end
+          subrecord_datasets[note_type][row[:archival_object_id]] << note_data
         end
 
         base.each do |row|
