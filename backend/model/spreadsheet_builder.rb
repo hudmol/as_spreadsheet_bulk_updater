@@ -191,6 +191,13 @@ class SpreadsheetBuilder
       StringColumn.new(:related_accession, :id_2, :property_name => :related_accessions, :i18n => 'ID Part 3'),
       StringColumn.new(:related_accession, :id_3, :property_name => :related_accessions, :i18n => 'ID Part 4'),
     ],
+    :language_and_script => [
+      EnumColumn.new(:language_and_script, :language, 'language_iso639_2', :i18n => 'Language'),
+      EnumColumn.new(:language_and_script, :script, 'script_iso15924', :i18n => 'Script')
+    ],
+    :note_langmaterial => [
+      StringColumn.new(:note_langmaterial, :content, :width => 30, :i18n_proc => proc{|col| "Language Note - #{col.index + 1} - Content"})
+    ],
   }
 
   # FIXME pull from enum to allow all values?
@@ -277,6 +284,25 @@ class SpreadsheetBuilder
          results[:related_accession] = [related_accession_max, 1].max
       end
 
+      # Ok... lang_material are their own kind of special too:
+      #
+      # they have a one-to-many language_and_script
+      language_and_script_max = db[:lang_material]
+                                  .join(:language_and_script, Sequel.qualify(:language_and_script, :lang_material_id) => Sequel.qualify(:lang_material, :id))
+                                  .filter(Sequel.qualify(:lang_material, :archival_object_id) => @ao_ids)
+                                  .group_and_count(Sequel.qualify(:lang_material, :archival_object_id))
+                                  .max(:count) || 0
+      results[:language_and_script] = [language_and_script_max, 1].max
+
+      # and one-to-many note_langmaterial too
+      note_langmaterial_max = db[:lang_material]
+                                .join(:note, Sequel.qualify(:note, :lang_material_id) => Sequel.qualify(:lang_material, :id))
+                                .filter(Sequel.qualify(:lang_material, :archival_object_id) => @ao_ids)
+                                .group_and_count(Sequel.qualify(:lang_material, :archival_object_id))
+                                .max(:count) || 0
+      results[:note_langmaterial] = [note_langmaterial_max, 1].max
+
+      # Notes!
       (MULTIPART_NOTES_OF_INTEREST + SINGLEPART_NOTES_OF_INTEREST).each do |note_type|
         notes_max = db[:note]
                       .filter(:archival_object_id => @ao_ids)
@@ -313,7 +339,7 @@ class SpreadsheetBuilder
 
   def related_accessions_iterator
     @subrecord_counts.fetch(:related_accession, 0).times do |i|
-      yield(:related_accesion, i)
+      yield(:related_accession, i)
     end
   end
 
@@ -333,6 +359,18 @@ class SpreadsheetBuilder
     end
   end
 
+  def language_and_script_iterator
+    @subrecord_counts.fetch(:language_and_script, 0).times do |i|
+      yield(:language_and_script, i)
+    end
+  end
+
+  def note_langmaterial_iterator
+    @subrecord_counts.fetch(:note_langmaterial, 0).times do |i|
+      yield(:note_langmaterial, i)
+    end
+  end
+
   def human_readable_headers
     all_columns.map{|col| col.header_label}
   end
@@ -348,6 +386,22 @@ class SpreadsheetBuilder
 
     FIELDS_OF_INTEREST.fetch(:archival_object).each do |column|
       result << column
+    end
+
+    language_and_script_iterator do |_, index|
+      FIELDS_OF_INTEREST.fetch(:language_and_script).each do |column|
+        column = column.clone
+        column.index = index
+        result << column
+      end
+    end
+
+    note_langmaterial_iterator do |_, index|
+      FIELDS_OF_INTEREST.fetch(:note_langmaterial).each do |column|
+        column = column.clone
+        column.index = index
+        result << column
+      end
     end
 
     subrecords_iterator do |subrecord, index|
@@ -467,6 +521,37 @@ class SpreadsheetBuilder
 
             subrecord_datasets[:related_accession][row[:archival_object_id]] << accession_data
           end
+        end
+
+        # lang_material specialness
+        db[:lang_material]
+          .join(:language_and_script, Sequel.qualify(:language_and_script, :lang_material_id) => Sequel.qualify(:lang_material, :id))
+          .filter(Sequel.qualify(:lang_material, :archival_object_id) => batch)
+          .select(Sequel.qualify(:lang_material, :archival_object_id),
+                  Sequel.qualify(:language_and_script, :language_id),
+                  Sequel.qualify(:language_and_script, :script_id))
+          .each do |row|
+          subrecord_datasets[:language_and_script] ||= {}
+          subrecord_datasets[:language_and_script][row[:archival_object_id]] ||= []
+          subrecord_datasets[:language_and_script][row[:archival_object_id]] << {
+            :language => row[:language_id] ? EnumMapper.enum_id_to_spreadsheet_value(row[:language_id], 'language_iso639_2') : nil,
+            :script => row[:script_id] ? EnumMapper.enum_id_to_spreadsheet_value(row[:script_id], 'script_iso15924') : nil,
+          }
+        end
+
+        db[:lang_material]
+          .join(:note, Sequel.qualify(:note, :lang_material_id) => Sequel.qualify(:lang_material, :id))
+          .filter(Sequel.qualify(:lang_material, :archival_object_id) => batch)
+          .select(Sequel.qualify(:lang_material, :archival_object_id),
+                  Sequel.qualify(:note, :notes))
+          .each do |row|
+          note_json = ASUtils.json_parse(row[:notes])
+
+          subrecord_datasets[:note_langmaterial] ||= {}
+          subrecord_datasets[:note_langmaterial][row[:archival_object_id]] ||= []
+          subrecord_datasets[:note_langmaterial][row[:archival_object_id]] << {
+            :content => Array(note_json['content']).first,
+          }
         end
 
         # Notes

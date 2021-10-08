@@ -102,6 +102,7 @@ class SpreadsheetBulkUpdater
     subrecord_updates_by_index = {}
     instance_updates_by_index = {}
     related_accession_updates_by_index = {}
+    lang_material_updates_by_index = {}
 
     notes_by_type = {}
 
@@ -146,9 +147,22 @@ class SpreadsheetBulkUpdater
           instance_updates_by_index[column.index][column.name.to_s] = clean_value
 
         # related accessions
-        else
+        elsif column.jsonmodel == :related_accession
           related_accession_updates_by_index[column.index] ||= {}
           related_accession_updates_by_index[column.index][column.name.to_s] = column.sanitise_incoming_value(value)
+
+        elsif column.jsonmodel == :language_and_script
+          lang_material_updates_by_index[:language_and_script] ||= {}
+          lang_material_updates_by_index[:language_and_script][column.index] ||= {}
+          lang_material_updates_by_index[:language_and_script][column.index][column.name.to_s] = column.sanitise_incoming_value(value)
+
+        elsif column.jsonmodel == :note_langmaterial
+          lang_material_updates_by_index[:note_langmaterial] ||= {}
+          lang_material_updates_by_index[:note_langmaterial][column.index] ||= {}
+          lang_material_updates_by_index[:note_langmaterial][column.index] = column.sanitise_incoming_value(value)
+
+        else
+          Log.error("Not able to handle column: #{column.path}")
         end
       end
 
@@ -158,6 +172,8 @@ class SpreadsheetBulkUpdater
       if SpreadsheetBuilder.related_accessions_enabled?
         record_changed = apply_related_accession_updates(row, ao_json, related_accession_updates_by_index) ||  record_changed
       end
+
+      record_changed = apply_lang_material_updates(row, ao_json, lang_material_updates_by_index) ||  record_changed
 
       if SpreadsheetBulkUpdater.apply_deletes?
         record_changed = delete_empty_notes(ao_json) || record_changed
@@ -399,6 +415,122 @@ class SpreadsheetBulkUpdater
     record_changed
   end
 
+  def apply_lang_material_updates(row, ao_json, lang_material_updates_by_index)
+    record_changed = false
+
+    existing_language_and_script = ao_json.lang_materials.select{|lm| lm['language_and_script'] && ASUtils.wrap(lm['notes']).empty?}
+
+    language_and_script_to_apply = []
+
+    lang_material_updates_by_index[:language_and_script].each do |index, updates|
+      if (existing_subrecord = existing_language_and_script.fetch(index, false))
+        if updates.all?{|_, value| value.to_s.empty? }
+          if SpreadsheetBulkUpdater.apply_deletes?
+            # DELETE!
+            record_changed = true
+          else
+            errors << {
+              sheet: SpreadsheetBuilder::SHEET_NAME,
+              column: "language_and_script/#{index}",
+              row: row.row_number,
+              errors: ["Deleting a Language is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+            }
+          end
+
+          next
+        end
+
+        if updates.all?{|field, value| existing_subrecord.fetch('language_and_script')[field].to_s == value.to_s}
+          # no changes
+          language_and_script_to_apply << existing_subrecord
+          next
+        end
+
+        record_changed = true
+
+        existing_subrecord['language_and_script'] = existing_subrecord.fetch('language_and_script').merge(updates)
+
+        language_and_script_to_apply << existing_subrecord
+      elsif updates.any?{|_, value| !value.to_s.strip.empty?}
+        record_changed = true
+
+        language_and_script_to_apply << {
+          'jsonmodel' => 'lang_material',
+          'language_and_script' => {
+            'jsonmodel_type' => 'language_and_script',
+          }.merge(updates)
+        }
+      end
+    end
+
+    # All langmaterial notes flattened (we only update the first `content` from each)
+    existing_note_langmaterial = ao_json.lang_materials.select{|lm| !ASUtils.wrap(lm['notes']).empty?}
+    existing_note_langmaterial_content = existing_note_langmaterial.map{|lm| lm['notes']}.flatten
+    notes_to_create = []
+
+    lang_material_updates_by_index[:note_langmaterial].each do |index, value_from_spreadsheet|
+      note_to_update = existing_note_langmaterial_content.fetch(index, nil)
+
+      if (note_to_update = existing_note_langmaterial_content.fetch(index, false))
+        if note_to_update.dig('content', 0) == value_from_spreadsheet
+          # nothing to do...
+          next
+        end
+
+        record_changed = true
+
+        if value_from_spreadsheet.to_s.empty? && !SpreadsheetBulkUpdater.apply_deletes?
+          errors << {
+            sheet: SpreadsheetBuilder::SHEET_NAME,
+            column: column.path,
+            row: row.row_number,
+            errors: ["Deleting a Language Note is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+          }
+        end
+
+        note_to_update['content'][0] = value_from_spreadsheet
+      elsif !value_from_spreadsheet.to_s.empty?
+        # Add a text note!
+        record_changed = true
+
+        notes_to_create << {
+          'jsonmodel' => 'lang_material',
+          'notes' => [{
+                        'content' => [value_from_spreadsheet],
+                        'jsonmodel_type' => 'note_langmaterial',
+                        'type' => 'langmaterial',
+                      }]
+        }
+      end
+    end
+
+    if SpreadsheetBulkUpdater.apply_deletes?
+      # drop any language and script where both are empty
+      language_and_script_to_apply.reject! do |lm|
+        lm.fetch('language_and_script')['language'].to_s.empty? && lm.fetch('language_and_script')['script'].to_s.empty?
+      end
+
+      # drop any notes where the content has been nil'd out and there are no
+      # other content strings on the note
+      existing_note_langmaterial.reject! do |lm|
+        lm['notes'].each do |note|
+          note['content'].reject!{|s| s.to_s.empty?}
+        end
+
+        lm['notes'].reject!{|note| note['content'].empty?}
+
+        lm['notes'].empty?
+      end
+    end
+
+    if record_changed
+      ao_json.lang_materials = language_and_script_to_apply + existing_note_langmaterial + notes_to_create
+    end
+
+    record_changed
+  end
+
+
   def apply_related_accession_updates(row, ao_json, related_accession_updates_by_index)
     record_changed = false
 
@@ -446,7 +578,7 @@ class SpreadsheetBulkUpdater
           else
             errors << {
               sheet: SpreadsheetBuilder::SHEET_NAME,
-              column: "related_accession/#{index}/id_0",
+              column: "related_accessions/#{index}/id_0",
               row: row.row_number,
               errors: ["Accession not found for identifier: #{candidate.inspect}"],
             }
@@ -477,7 +609,7 @@ class SpreadsheetBulkUpdater
         else
           errors << {
             sheet: SpreadsheetBuilder::SHEET_NAME,
-            column: "related_accession/#{index}/id_0",
+            column: "related_accessions/#{index}/id_0",
             row: row.row_number,
             errors: ["Accession not found for identifier: #{candidate.inspect}"],
           }
