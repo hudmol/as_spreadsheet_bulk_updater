@@ -31,7 +31,9 @@
 
     <div class="row">
       <div class="col-sm-3">
-        <p>Columns to update:</p>
+        <p>
+          <input id="bulk-update-toplevel-select-all" class='checkbox-select-all' type="checkbox" checked="checked">&nbsp;Columns to update:
+        </p>
 
         <table class="bulk-update-column-selector">
           <%
@@ -54,7 +56,7 @@
           <% end %>
           <tr>
             <td class="checkbox-cell">
-              <input type="checkbox" checked="checked" id="bulk-update-select-all-notes">
+              <input type="checkbox" checked="checked" id="bulk-update-select-all-notes" class="checkbox-select-all">
             </td>
             <td><strong>Note types:</strong></td>
           </tr>
@@ -97,6 +99,7 @@
 
     <script>
       bulkUpdaterHandleSelectAll($('#bulk-update-select-all-notes'), $('.bulk-update-note-checkbox'));
+      bulkUpdaterHandleSelectAll($('#bulk-update-toplevel-select-all'), $('input[type=checkbox]:not(#bulk-update-toplevel-select-all)'));
     </script>
 
     <hr/>
