@@ -2,6 +2,9 @@
 <%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/fattable.css" %>
 <%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/fattable.js" %>
 
+<%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/bulk_updater.css" %>
+<%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/bulk_updater.js" %>
+
 <div class="record-pane">
 
   <h1>Generate a Bulk Update Spreadsheet</h1>
@@ -23,6 +26,78 @@
   <%= form_tag({:action => :download}, {:method => 'post', :id => "work_order_form"}) do %>
     <%= hidden_field_tag "resource", @uri %>
     <div class="report-fields"></div>
+
+    <hr/>
+
+    <div class="row">
+      <div class="col-sm-3">
+        <p>Columns to update:</p>
+
+        <table class="bulk-update-column-selector">
+          <%
+          [
+            ['update_select_date', 'date._plural'],
+            ['update_select_extent', 'extent._plural'],
+            ['update_select_instance', 'instance._plural'],
+            ['update_select_related_accession', 'related_accession._plural'],
+            ['update_select_langmaterial', 'lang_material._plural'],
+          ].each do |value, label_key|
+          %>
+          <tr>
+            <td class="checkbox-cell">
+              <input id="<%= value %>" name="<%= value %>" type="checkbox" checked="checked">
+            </td>
+            <td class="label-cell">
+              <label for="<%= value %>"><%= I18n.t(label_key) %></label>
+            </td>
+          </tr>
+          <% end %>
+          <tr>
+            <td class="checkbox-cell">
+              <input type="checkbox" checked="checked" id="bulk-update-select-all-notes">
+            </td>
+            <td><strong>Note types:</strong></td>
+          </tr>
+          <tr>
+            <td></td>
+            <td>
+              <table>
+                <%
+                [
+                  ['update_select_note_accessrestrict', 'enumerations._note_types.accessrestrict'],
+                  ['update_select_note_scopecontent', 'enumerations._note_types.scopecontent'],
+                  ['update_select_note_bioghist', 'enumerations._note_types.bioghist'],
+                  ['update_select_note_accruals', 'enumerations._note_types.accruals'],
+                  ['update_select_note_dimensions', 'enumerations._note_types.dimensions'],
+                  ['update_select_note_altformavail', 'enumerations._note_types.altformavail'],
+                  ['update_select_note_odd', 'enumerations._note_types.odd'],
+                  ['update_select_note_phystech', 'enumerations._note_types.phystech'],
+                  ['update_select_note_processinfo', 'enumerations._note_types.processinfo'],
+                  ['update_select_note_relatedmaterial', 'enumerations._note_types.relatedmaterial'],
+                  ['update_select_note_separatedmaterial', 'enumerations._note_types.separatedmaterial'],
+                  ['update_select_note_abstract', 'enumerations._note_types.abstract'],
+                  ['update_select_note_physdesc', 'enumerations._note_types.physdesc'],
+                ]
+                .sort_by {|_, note_label_key| I18n.t(note_label_key)}
+                .each do |note_value, note_label_key| %>
+                  <tr>
+                    <td class="checkbox-cell">
+                      <input id="<%= note_value %>" name="<%= note_value %>" type="checkbox" checked="checked" class="bulk-update-note-checkbox">
+                    </td>
+                    <td class="label-cell">
+                      <label for="<%= note_value %>"><%= I18n.t(note_label_key) %></label>
+                    </td>
+                  </tr>
+                <% end %>
+              </table>
+            </td>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      bulkUpdaterHandleSelectAll($('#bulk-update-select-all-notes'), $('.bulk-update-note-checkbox'));
+    </script>
 
     <hr/>
 

@@ -1,0 +1,16 @@
+.bulk-update-column-selector td.checkbox-cell {
+    width: 2em;
+    text-align: center;
+    vertical-align: middle;
+    line-height: 2em;
+}
+
+.bulk-update-column-selector td.label-cell {
+    vertical-align: middle;
+    line-height: 2em;
+    margin: 0;
+}
+
+.bulk-update-column-selector td.label-cell label, .bulk-update-column-selector td.label-cell input[type=checkbox] {
+    margin: 0;
+}

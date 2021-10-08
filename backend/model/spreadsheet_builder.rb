@@ -2,7 +2,7 @@ require 'write_xlsx'
 
 class SpreadsheetBuilder
 
-  def initialize(resource_uri, ao_uris, min_subrecords, extra_subrecords, min_notes)
+  def initialize(resource_uri, ao_uris, min_subrecords, extra_subrecords, min_notes, selected_columns)
     @resource_uri = resource_uri
     @resource_id = JSONModel.parse_reference(@resource_uri).fetch(:id)
     @ao_uris = []
@@ -17,6 +17,7 @@ class SpreadsheetBuilder
     end
 
     @subrecord_counts = calculate_subrecord_counts(min_subrecords, extra_subrecords, min_notes)
+    @selected_columns = selected_columns
   end
 
   BATCH_SIZE = 200
@@ -388,23 +389,29 @@ class SpreadsheetBuilder
       result << column
     end
 
-    language_and_script_iterator do |_, index|
-      FIELDS_OF_INTEREST.fetch(:language_and_script).each do |column|
-        column = column.clone
-        column.index = index
-        result << column
+    if @selected_columns.include?('langmaterial')
+      language_and_script_iterator do |_, index|
+        FIELDS_OF_INTEREST.fetch(:language_and_script).each do |column|
+          column = column.clone
+          column.index = index
+          result << column
+        end
       end
-    end
 
-    note_langmaterial_iterator do |_, index|
-      FIELDS_OF_INTEREST.fetch(:note_langmaterial).each do |column|
-        column = column.clone
-        column.index = index
-        result << column
+      note_langmaterial_iterator do |_, index|
+        FIELDS_OF_INTEREST.fetch(:note_langmaterial).each do |column|
+          column = column.clone
+          column.index = index
+          result << column
+        end
       end
     end
 
     subrecords_iterator do |subrecord, index|
+      unless @selected_columns.include?(subrecord.to_s)
+        next
+      end
+
       FIELDS_OF_INTEREST.fetch(subrecord).each do |column|
         column = column.clone
         column.index = index
@@ -412,23 +419,31 @@ class SpreadsheetBuilder
       end
     end
 
-    instances_iterator do |_, index|
-      FIELDS_OF_INTEREST.fetch(:instance).each do |column|
-        column = column.clone
-        column.index = index
-        result << column
+    if @selected_columns.include?('instance')
+      instances_iterator do |_, index|
+        FIELDS_OF_INTEREST.fetch(:instance).each do |column|
+          column = column.clone
+          column.index = index
+          result << column
+        end
       end
     end
 
-    related_accessions_iterator do |_, index|
-      FIELDS_OF_INTEREST.fetch(:related_accession).each do |column|
-        column = column.clone
-        column.index = index
-        result << column
+    if @selected_columns.include?('related_accession')
+      related_accessions_iterator do |_, index|
+        FIELDS_OF_INTEREST.fetch(:related_accession).each do |column|
+          column = column.clone
+          column.index = index
+          result << column
+        end
       end
     end
 
     notes_iterator do |jsonmodel_type, note_type, index|
+      unless @selected_columns.include?("note_#{note_type}")
+        next
+      end
+
       column = NoteContentColumn.new(:note, note_type, jsonmodel_type, :width => 30)
       column.index = index
       result << column

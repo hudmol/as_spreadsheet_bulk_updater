@@ -15,7 +15,12 @@ class SpreadsheetBulkUpdaterController < ApplicationController
       'resource_uri' => params[:resource],
       'min_subrecords' => params[:min_subrecords],
       'extra_subrecords' => params[:extra_subrecords],
-      'min_notes' => params[:min_notes]
+      'min_notes' => params[:min_notes],
+      'selected_columns[]' => params.to_unsafe_hash.map {|param, value|
+        if param.to_s =~ /\Aupdate_select_(.*)/ && value == 'on'
+          $1
+        end
+      }.compact
     }
 
     generate_spreadsheet(uri, args)
