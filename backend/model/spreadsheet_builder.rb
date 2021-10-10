@@ -201,7 +201,6 @@ class SpreadsheetBuilder
     ],
   }
 
-  # FIXME pull from enum to allow all values?
   MULTIPART_NOTES_OF_INTEREST = [
     :accessrestrict,
     :scopecontent,
@@ -216,7 +215,6 @@ class SpreadsheetBuilder
     :separatedmaterial,
   ]
 
-  # FIXME pull from enum to allow all values?
   SINGLEPART_NOTES_OF_INTEREST = [
     :abstract,
     :physdesc,
