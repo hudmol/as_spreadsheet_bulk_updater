@@ -690,8 +690,8 @@ class SpreadsheetBuilder
       row_values.each_with_index do |columnAndValue, i|
         if columnAndValue.value
           sheet.write_string(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
-        elsif locked_column_indexes.include?(i) && locked
-          sheet.write(rowidx, i, columnAndValue.value, true)
+        else
+          sheet.write(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
         end
       end
 
