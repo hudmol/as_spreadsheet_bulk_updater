@@ -843,6 +843,7 @@ class SpreadsheetBulkUpdater
 
     column_by_path.each do |path, column|
       if [:top_container_type, :top_container_indicator, :top_container_barcode].include?(column.name)
+        out[:top_container] ||= {}
         out[:top_container][path] = column
       end
 
