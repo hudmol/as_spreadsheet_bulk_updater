@@ -53,8 +53,4 @@ function SpreadsheetBuilderForm(formId) {
 
 SpreadsheetBuilderForm.prototype.showPopup = function() {
     AS.openCustomModal('spreadsheetBuilderPopup', 'Download in progress...', $('#downloadPopupContent')[0].innerHTML, false, {}, $('#' + this.formId).find('.submit-btn'));
-    $('#spreadsheetBuilderPopup').on('click', '.close-download-popup', function() {
-        $('#spreadsheetBuilderPopup').hide();
-        $('#spreadsheetBuilderPopup').remove();
-    })
 }
