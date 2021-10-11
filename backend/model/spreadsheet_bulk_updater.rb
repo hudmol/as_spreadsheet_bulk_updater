@@ -58,19 +58,22 @@ class SpreadsheetBulkUpdater
     # Away!
     column_by_path = extract_columns(filename)
 
+    # work out which subrecords we're dealing with
+    subrecord_columns = find_subrecord_columns(column_by_path)
+
     DB.open(true) do |db|
       resource_id = resource_ids_in_play(filename).fetch(0)
 
       # before we get too crazy, let's ensure we have all the top containers
       # available to this resource
-      @top_containers_in_resource = extract_top_containers_for_resource(db, resource_id)
+      @top_containers_in_resource = subrecord_columns[:top_container] ? extract_top_containers_for_resource(db, resource_id) : {}
 
       if SpreadsheetBuilder.related_accessions_enabled?
-        @accessions_in_sheet = extract_accessions_from_sheet(db, filename, column_by_path)
+        @accessions_in_sheet = subrecord_columns[:related_accession] ? extract_accessions_from_sheet(db, filename, subrecord_columns[:related_accession]) : {}
       end
 
-      if create_missing_top_containers?
-        top_containers_in_sheet = extract_top_containers_from_sheet(filename, column_by_path)
+      if create_missing_top_containers? && subrecord_columns[:top_container]
+        top_containers_in_sheet = extract_top_containers_from_sheet(filename, subrecord_columns[:top_container])
         create_missing_top_containers(top_containers_in_sheet, job)
       end
 
@@ -81,7 +84,7 @@ class SpreadsheetBulkUpdater
         ao_jsons = ArchivalObject.sequel_to_jsonmodel(ao_objs)
 
         ao_objs.zip(ao_jsons).each do |ao, ao_json|
-          process_row(to_process.fetch(ao.id), ao, ao_json, column_by_path)
+          process_row(to_process.fetch(ao.id), ao, ao_json, column_by_path, subrecord_columns)
         end
       end
 
@@ -96,19 +99,21 @@ class SpreadsheetBulkUpdater
     }
   end
 
-  def process_row(row, ao, ao_json, column_by_path)
+  def process_row(row, ao, ao_json, column_by_path, subrecord_columns)
     record_changed = false
 
     subrecord_updates_by_index = {}
     instance_updates_by_index = {}
     related_accession_updates_by_index = {}
-    lang_material_updates_by_index = {}
+    lang_material_updates_by_index = {:language_and_script => {}, :note_langmaterial => {}}
 
     notes_by_type = {}
 
     begin
       row.values.each do |path, value|
         column = column_by_path.fetch(path)
+
+        next unless subrecord_columns[column.jsonmodel]
 
         # fields on the AO
         if column.jsonmodel == :archival_object
@@ -152,12 +157,10 @@ class SpreadsheetBulkUpdater
           related_accession_updates_by_index[column.index][column.name.to_s] = column.sanitise_incoming_value(value)
 
         elsif column.jsonmodel == :language_and_script
-          lang_material_updates_by_index[:language_and_script] ||= {}
           lang_material_updates_by_index[:language_and_script][column.index] ||= {}
           lang_material_updates_by_index[:language_and_script][column.index][column.name.to_s] = column.sanitise_incoming_value(value)
 
         elsif column.jsonmodel == :note_langmaterial
-          lang_material_updates_by_index[:note_langmaterial] ||= {}
           lang_material_updates_by_index[:note_langmaterial][column.index] ||= {}
           lang_material_updates_by_index[:note_langmaterial][column.index] = column.sanitise_incoming_value(value)
 
@@ -167,13 +170,13 @@ class SpreadsheetBulkUpdater
       end
 
       record_changed = apply_sub_record_updates(row, ao_json, subrecord_updates_by_index) || record_changed
-      record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index) ||  record_changed
+      record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index) || record_changed
 
       if SpreadsheetBuilder.related_accessions_enabled?
-        record_changed = apply_related_accession_updates(row, ao_json, related_accession_updates_by_index) ||  record_changed
+        record_changed = apply_related_accession_updates(row, ao_json, related_accession_updates_by_index) || record_changed
       end
 
-      record_changed = apply_lang_material_updates(row, ao_json, lang_material_updates_by_index) ||  record_changed
+      record_changed = apply_lang_material_updates(row, ao_json, lang_material_updates_by_index) || record_changed
 
       if SpreadsheetBulkUpdater.apply_deletes?
         record_changed = delete_empty_notes(ao_json) || record_changed
@@ -835,15 +838,23 @@ class SpreadsheetBulkUpdater
     end
   end
 
-  def extract_top_containers_from_sheet(filename, column_by_path)
-    top_containers = {}
-    top_container_columns = {}
+  def find_subrecord_columns(column_by_path)
+    out = {}
 
     column_by_path.each do |path, column|
       if [:top_container_type, :top_container_indicator, :top_container_barcode].include?(column.name)
-        top_container_columns[path] = column
+        out[:top_container][path] = column
       end
+
+      out[column.jsonmodel] ||= {}
+      out[column.jsonmodel][path] = column
     end
+
+    out
+  end
+
+  def extract_top_containers_from_sheet(filename, top_container_columns)
+    top_containers = {}
 
     each_row(filename) do |row|
       next if row.empty?
@@ -861,15 +872,8 @@ class SpreadsheetBulkUpdater
     top_containers
   end
 
-  def extract_accessions_from_sheet(db, filename, column_by_path)
+  def extract_accessions_from_sheet(db, filename, related_accession_columns)
     accessions = {}
-
-    related_accession_columns = {}
-    column_by_path.each do |path, column|
-      if column.jsonmodel == :related_accession
-        related_accession_columns[path] = column
-      end
-    end
 
     each_row(filename) do |row|
       next if row.empty?
