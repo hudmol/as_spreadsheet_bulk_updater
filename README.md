@@ -31,11 +31,19 @@ XLSX spreadsheet.
 Archival Object fields:
 * title
 * level
+* Ref ID
+* Component ID
+* Repository Processing Note
+* Publish?
 
 Subrecords:
 * dates
 * extents
 * instances
+* Language and Script
+
+Related records:
+* Related Accessions (if you're using the [as_accession_links](https://github.com/hudmol/as_accession_links) plugin)
 
 The spreadsheet contains grouped columns for each existing subrecord plus at
 least 3 empty sets (by default) to allow creation of new subrecords on the
@@ -49,6 +57,16 @@ Notes:
 * accessrestrict
 * bioghist
 * scopecontent
+* accruals
+* dimensions
+* altformavail
+* odd
+* phystech
+* processinfo
+* relatedmaterial
+* separatedmaterial
+* abstract
+* physdesc
 
 The spreadsheet exposes the first and only first `note_text` for each of the
 existing note records for the note types above. Restriction fields for the note
@@ -128,12 +146,11 @@ Default: `false`
 
 Here are some thoughts about what could be added in future versions:
 
--  Export more fields in the spreadsheet and make it configurable
+-  ~~Export more fields in the spreadsheet and make it configurable~~
 -  Support adding and deleting rows
 -  ~~Provide some control over the rules for how many subrecords are exported~~
 -  Provide a direct link to create the import job
 -  Provide a way to soft lock the resource to stop others editing it while you fiddle with the spreadsheet
 -  Think about rationalizing the dependency on the digitization work order plugin
--  Fix bugs! We know you're in there
-
-
+-  ~~Fix bugs! We know you're in there~~
+-  Fix more bugs!
