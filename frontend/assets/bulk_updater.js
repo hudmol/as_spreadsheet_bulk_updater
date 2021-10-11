@@ -33,7 +33,28 @@ function bulkUpdaterHandleSelectAll(selectAllCheckbox, controlledCheckboxes) {
             selectAllCheckbox.prop('checked', false);
             selectAllCheckbox.indeterminate = true;
         }
-    };
+    }
 
     updateSelectAll();
+}
+
+function SpreadsheetBuilderForm(formId) {
+    var self = this;
+    this.formId = formId;
+
+    $('#' + self.formId).on('submit', function() {
+        if ($('#spreadsheetBuilderPopup').length === 0) {
+            self.showPopup();
+        } else {
+            return false;
+        }
+    });
+}
+
+SpreadsheetBuilderForm.prototype.showPopup = function() {
+    AS.openCustomModal('spreadsheetBuilderPopup', 'Download in progress...', $('#downloadPopupContent')[0].innerHTML, false, {}, $('#' + this.formId).find('.submit-btn'));
+    $('#spreadsheetBuilderPopup').on('click', '.close-download-popup', function() {
+        $('#spreadsheetBuilderPopup').hide();
+        $('#spreadsheetBuilderPopup').remove();
+    })
 }
