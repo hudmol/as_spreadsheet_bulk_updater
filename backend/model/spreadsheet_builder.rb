@@ -302,15 +302,22 @@ class SpreadsheetBuilder
       results[:note_langmaterial] = [note_langmaterial_max, 1].max
 
       # Notes!
-      (MULTIPART_NOTES_OF_INTEREST + SINGLEPART_NOTES_OF_INTEREST).each do |note_type|
-        notes_max = db[:note]
-                      .filter(:archival_object_id => @ao_ids)
-                      .filter(Sequel.function(:json_extract, :notes, '$.type') => note_type.to_s)
-                      .group_and_count(:archival_object_id)
-                      .max(:count) || 0
+      notes_max_counts = {}
 
+      db[:note]
+        .filter(:archival_object_id => @ao_ids)
+        .select(:archival_object_id, :notes)
+        .each do |row|
+        note_json = JSON.parse(row[:notes])
+        note_type = note_json.fetch('type')
+
+        notes_max_counts[note_type] ||= 0
+        notes_max_counts[note_type] += 1
+      end
+
+      (MULTIPART_NOTES_OF_INTEREST + SINGLEPART_NOTES_OF_INTEREST).each do |note_type|
         # Notes: At least min_notes of each type
-        results[note_type] = [min_notes, notes_max].max
+        results[note_type] = [min_notes, notes_max_counts.fetch(note_type, 0)].max
       end
     end
 
