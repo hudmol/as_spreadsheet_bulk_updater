@@ -685,11 +685,15 @@ class SpreadsheetBuilder
 
     rowidx = 2
     dataset_iterator do |row_values, locked_column_indexes|
+      # Unlock the entire row to speed things up as we no longer have to write
+      # to all the empty cells to unlock them.
+      sheet.set_row(rowidx, nil, unlocked)
+
       row_values.each_with_index do |columnAndValue, i|
         if columnAndValue.value
           sheet.write_string(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
-        else
-          sheet.write(rowidx, i, columnAndValue.value, locked_column_indexes.include?(i) ? locked : unlocked)
+        elsif locked_column_indexes.include?(i)
+          sheet.write(rowidx, i, columnAndValue.value, locked)
         end
       end
 
