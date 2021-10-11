@@ -8,7 +8,7 @@ class ArchivesSpaceService < Sinatra::Base
             ["extra_subrecords", Integer, "The number of extra subrecords to include", :default => 3],
             ["min_notes", Integer, "The minimum number of note subrecords to include", :default => 2],
             ["resource_uri", String, "The resource URI"],
-            ["selected_columns", [String], "The set of columns to include"],
+            ["selected_columns", [String], "The set of columns to include", :optional => true],
            )
     .permissions([:view_repository])
     .returns([200, "spreadsheet"]) \
@@ -18,7 +18,7 @@ class ArchivesSpaceService < Sinatra::Base
                                      params[:min_subrecords],
                                      params[:extra_subrecords],
                                      params[:min_notes],
-                                     params[:selected_columns])
+                                     (params[:selected_columns] || []))
 
     [
       200,
