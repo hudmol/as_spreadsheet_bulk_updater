@@ -2,6 +2,8 @@ require 'write_xlsx'
 
 class SpreadsheetBuilder
 
+  ALWAYS_FIELDS = ['id', 'lock_version', 'title']
+
   def initialize(resource_uri, ao_uris, min_subrecords, extra_subrecords, min_notes, selected_columns)
     @resource_uri = resource_uri
     @resource_id = JSONModel.parse_reference(@resource_uri).fetch(:id)
@@ -17,7 +19,7 @@ class SpreadsheetBuilder
     end
 
     @subrecord_counts = calculate_subrecord_counts(min_subrecords, extra_subrecords, min_notes)
-    @selected_columns = selected_columns
+    @selected_columns = selected_columns + ALWAYS_FIELDS
   end
 
   BATCH_SIZE = 200
@@ -155,7 +157,8 @@ class SpreadsheetBuilder
       StringColumn.new(:archival_object, :lock_version, :header_label => "Version", :locked => true),
       StringColumn.new(:archival_object, :title, :width => 30),
       EnumColumn.new(:archival_object, :level, 'archival_record_level', :width => 15),
-      StringColumn.new(:archival_object, :ref_id, :width => 15),
+      # ref_id is read only so removing for now
+      # StringColumn.new(:archival_object, :ref_id, :width => 15),
       StringColumn.new(:archival_object, :component_id, :width => 15),
       StringColumn.new(:archival_object, :repository_processing_note, :width => 30),
       BooleanColumn.new(:archival_object, :publish),
@@ -391,7 +394,7 @@ class SpreadsheetBuilder
     result = []
 
     FIELDS_OF_INTEREST.fetch(:archival_object).each do |column|
-      result << column
+      result << column if @selected_columns.include?(column.name.to_s)
     end
 
     if @selected_columns.include?('langmaterial')
