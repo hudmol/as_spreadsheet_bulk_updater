@@ -157,8 +157,7 @@ class SpreadsheetBuilder
       StringColumn.new(:archival_object, :lock_version, :header_label => "Version", :locked => true),
       StringColumn.new(:archival_object, :title, :width => 30),
       EnumColumn.new(:archival_object, :level, 'archival_record_level', :width => 15),
-      # ref_id is read only so removing for now
-      # StringColumn.new(:archival_object, :ref_id, :width => 15),
+      StringColumn.new(:archival_object, :ref_id, :width => 15, :locked => true),
       StringColumn.new(:archival_object, :component_id, :width => 15),
       StringColumn.new(:archival_object, :repository_processing_note, :width => 30),
       BooleanColumn.new(:archival_object, :publish),
