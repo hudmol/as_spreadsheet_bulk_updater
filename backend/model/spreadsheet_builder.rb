@@ -693,11 +693,17 @@ class SpreadsheetBuilder
     sheet.set_row(0, nil, human_header_format)
     sheet.set_row(1, nil, locked)
 
+    # format editable rows to not be locked by default and force
+    # string-formatting
+    row_format = wb.add_format
+    row_format.set_num_format(0x31)
+    row_format.set_locked(0)
+
     rowidx = 2
     dataset_iterator do |row_values, locked_column_indexes|
       # Unlock the entire row to speed things up as we no longer have to write
       # to all the empty cells to unlock them.
-      sheet.set_row(rowidx, nil, unlocked)
+      sheet.set_row(rowidx, nil, row_format)
 
       row_values.each_with_index do |columnAndValue, i|
         if columnAndValue.value
