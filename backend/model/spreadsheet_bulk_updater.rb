@@ -170,7 +170,10 @@ class SpreadsheetBulkUpdater
       end
 
       record_changed = apply_sub_record_updates(row, ao_json, subrecord_updates_by_index) || record_changed
-      record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index) || record_changed
+
+      unless instance_updates_by_index.empty?
+        record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index) || record_changed
+      end
 
       if SpreadsheetBuilder.related_accessions_enabled?
         record_changed = apply_related_accession_updates(row, ao_json, related_accession_updates_by_index) || record_changed
