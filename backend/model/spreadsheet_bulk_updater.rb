@@ -699,7 +699,7 @@ class SpreadsheetBulkUpdater
               sheet: SpreadsheetBuilder::SHEET_NAME,
               column: "instances/#{index}/top_container_indicator",
               row: row.row_number,
-              errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container)],
+              errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container, @top_containers_in_resource)],
             }
           end
         end
@@ -741,7 +741,7 @@ class SpreadsheetBulkUpdater
             sheet: SpreadsheetBuilder::SHEET_NAME,
             column: "instances/#{index}/top_container_indicator",
             row: row.row_number,
-            errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container)],
+            errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container, @top_containers_in_resource)],
           }
         end
 
@@ -1049,9 +1049,12 @@ class SpreadsheetBulkUpdater
     end
   end
 
-  def self.missing_container_error(container)
+  def self.missing_container_error(container, available_top_containers)
     "Top container not found attached within resource: #{container.inspect}\n" +
-      "        *** Set 'Create Missing Top Containers' to create missing Top Containers instead of seeing this error. ***"
+      "        *** Set 'Create Missing Top Containers' to create missing Top Containers instead of seeing this error. ***\n" +
+      "\n" +
+      "The following top containers are attached within this resource:\n\n" +
+      available_top_containers.map {|tc| "  * #{tc.inspect}\n"}.join("")
   end
 
 end
