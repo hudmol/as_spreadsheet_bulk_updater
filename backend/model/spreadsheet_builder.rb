@@ -1,5 +1,3 @@
-require 'write_xlsx'
-
 class SpreadsheetBuilder
 
   ALWAYS_FIELDS = ['id', 'lock_version', 'title']
