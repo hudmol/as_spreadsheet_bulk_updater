@@ -118,12 +118,13 @@ class SpreadsheetBuilder
   end
 
   class EnumColumn < StringColumn
-    attr_accessor :enum_name, :skip_values
+    attr_accessor :enum_name, :skip_values, :override_values
 
     def initialize(jsonmodel, name, enum_name, opts = {})
       super(jsonmodel, name, {:column => "#{name}_id"}.merge(opts))
       @enum_name = enum_name
       @skip_values = opts.fetch(:skip_enum_values, [])
+      @override_values = opts.fetch(:override_values, [])
     end
 
     def value_for(enum_id)
@@ -185,6 +186,13 @@ class SpreadsheetBuilder
       StringColumn.new(:instance, :sub_container_barcode_2, :property_name => :instances, :i18n => "Child Container Barcode"),          #
       EnumColumn.new(:instance, :sub_container_type_3, 'container_type', :property_name => :instances, :i18n => "Grandchild Type"),     # Boo.
       StringColumn.new(:instance, :sub_container_indicator_3, :property_name => :instances, :i18n => "Grandchild Indicator"),           #
+    ],
+    :digital_object => [
+      StringColumn.new(:digital_object, :digital_object_id, :i18n => "Identifier"),
+      StringColumn.new(:digital_object, :digital_object_title, :i18n => "Title"),
+      BooleanColumn.new(:digital_object, :digital_object_publish, :i18n => "Publish?"),
+      StringColumn.new(:digital_object, :file_version_file_uri, :i18n => "File URI"),
+      StringColumn.new(:digital_object, :file_version_caption, :i18n => "File Caption"),
     ],
     :related_accession => [
       StringColumn.new(:related_accession, :id_0, :property_name => :related_accessions, :i18n => 'ID Part 1'),
@@ -273,6 +281,15 @@ class SpreadsheetBuilder
 
       results[:instance] = [min_subrecords, instances_max + extra_subrecords].max
 
+      # Digital Object Instances are special too
+      digital_objects_max = db[:instance]
+                                      .filter(:archival_object_id => @ao_ids)
+                                      .filter(:instance_type_id => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object'))
+                                      .group_and_count(:archival_object_id)
+                                      .max(:count) || 0
+
+      results[:digital_object] = [min_subrecords, digital_objects_max + extra_subrecords].max
+
       # Related Accessions are special and only available if the as_accession_links plugin is enabled
       if SpreadsheetBuilder.related_accessions_enabled?
         related_accession_max = db[:accession_component_links_rlshp]
@@ -340,6 +357,12 @@ class SpreadsheetBuilder
   def instances_iterator
     @subrecord_counts.fetch(:instance).times do |i|
       yield(:instance, i)
+    end
+  end
+
+  def digital_objects_iterator
+    @subrecord_counts.fetch(:digital_object).times do |i|
+      yield(:digital_object, i)
     end
   end
 
@@ -434,6 +457,16 @@ class SpreadsheetBuilder
       end
     end
 
+    if @selected_columns.include?('digital_object')
+      digital_objects_iterator do |_, index|
+        FIELDS_OF_INTEREST.fetch(:digital_object).each do |column|
+          column = column.clone
+          column.index = index
+          result << column
+        end
+      end
+    end
+
     if @selected_columns.include?('related_accession')
       related_accessions_iterator do |_, index|
         FIELDS_OF_INTEREST.fetch(:related_accession).each do |column|
@@ -518,6 +551,42 @@ class SpreadsheetBuilder
             :sub_container_barcode_2 => row[:sub_container_barcode_2],
             :sub_container_type_3 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_3_id], 'container_type'),
             :sub_container_indicator_3 => row[:sub_container_indicator_3],
+          }
+        end
+
+        # Digital Object Instances
+        #
+        # - only support editing one file version per digital object
+        #   (or one row per digital object instance)
+        seen_file_versions = {}
+        db[:instance]
+          .join(:instance_do_link_rlshp, Sequel.qualify(:instance_do_link_rlshp, :instance_id) => Sequel.qualify(:instance, :id))
+          .join(:digital_object, Sequel.qualify(:digital_object, :id) => Sequel.qualify(:instance_do_link_rlshp, :digital_object_id))
+          .left_join(:file_version, Sequel.qualify(:file_version, :digital_object_id) => Sequel.qualify(:digital_object, :id))
+          .filter(Sequel.qualify(:instance, :archival_object_id) => batch)
+          .filter(Sequel.qualify(:instance, :instance_type_id) => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object'))
+          .select(
+            Sequel.as(Sequel.qualify(:instance, :archival_object_id), :archival_object_id),
+            Sequel.as(Sequel.qualify(:instance_do_link_rlshp, :id), :rlshp_id),
+            Sequel.as(Sequel.qualify(:digital_object, :digital_object_id), :digital_object_id),
+            Sequel.as(Sequel.qualify(:digital_object, :title), :digital_object_title),
+            Sequel.as(Sequel.qualify(:digital_object, :publish), :digital_object_publish),
+            Sequel.as(Sequel.qualify(:file_version, :id), :file_version_id),
+            Sequel.as(Sequel.qualify(:file_version, :file_uri), :file_version_file_uri),
+            Sequel.as(Sequel.qualify(:file_version, :caption), :file_version_caption),
+            ).each do |row|
+          next if seen_file_versions.fetch(row[:rlshp_id], false)
+
+          seen_file_versions[row[:rlshp_id]] = true
+
+          subrecord_datasets[:digital_object] ||= {}
+          subrecord_datasets[:digital_object][row[:archival_object_id]] ||= []
+          subrecord_datasets[:digital_object][row[:archival_object_id]] << {
+            :digital_object_id => row[:digital_object_id],
+            :digital_object_title => row[:digital_object_title],
+            :digital_object_publish => row[:digital_object_publish],
+            :file_version_file_uri => row[:file_version_file_uri],
+            :file_version_caption => row[:file_version_caption],
           }
         end
 
@@ -640,7 +709,11 @@ class SpreadsheetBuilder
             else
               subrecord_data = subrecord_datasets.fetch(column.jsonmodel, {}).fetch(row[:id], []).fetch(column.index, nil)
               if subrecord_data
-                current_row << ColumnAndValue.new(subrecord_data.fetch(column.name, nil), column)
+                if (value = subrecord_data.fetch(column.name, nil))
+                  current_row << ColumnAndValue.new(column.value_for(value), column)
+                else
+                  current_row << ColumnAndValue.new(nil, column)
+                end
               else
                 current_row << ColumnAndValue.new(nil, column)
               end
@@ -719,7 +792,7 @@ class SpreadsheetBuilder
     all_columns.each_with_index do |column, col_index|
       if column.is_a?(EnumColumn)
         enum_sheet.write(0, col_index, column.enum_name)
-        enum_values = BackendEnumSource.values_for(column.enum_name)
+        enum_values = column.override_values.empty? ? BackendEnumSource.values_for(column.enum_name) : column.override_values
         enum_values.reject!{|value| column.skip_values.include?(value)}
         enum_values
           .map{|value| EnumMapper.enum_to_spreadsheet_value(value, column.enum_name)}
