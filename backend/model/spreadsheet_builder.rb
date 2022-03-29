@@ -408,16 +408,20 @@ class SpreadsheetBuilder
     all_columns.map{|col| col.path}
   end
 
+  def selected?(column_group)
+    @selected_columns.include?(column_group.to_s)
+  end
+
   def all_columns
     return @columns if @columns
 
     result = []
 
     FIELDS_OF_INTEREST.fetch(:archival_object).each do |column|
-      result << column if @selected_columns.include?(column.name.to_s)
+      result << column if selected?(column.name.to_s)
     end
 
-    if @selected_columns.include?('langmaterial')
+    if selected?('langmaterial')
       language_and_script_iterator do |_, index|
         FIELDS_OF_INTEREST.fetch(:language_and_script).each do |column|
           column = column.clone
@@ -436,7 +440,7 @@ class SpreadsheetBuilder
     end
 
     subrecords_iterator do |subrecord, index|
-      unless @selected_columns.include?(subrecord.to_s)
+      unless selected?(subrecord.to_s)
         next
       end
 
@@ -447,7 +451,7 @@ class SpreadsheetBuilder
       end
     end
 
-    if @selected_columns.include?('instance')
+    if selected?('instance')
       instances_iterator do |_, index|
         FIELDS_OF_INTEREST.fetch(:instance).each do |column|
           column = column.clone
@@ -457,7 +461,7 @@ class SpreadsheetBuilder
       end
     end
 
-    if @selected_columns.include?('digital_object')
+    if selected?('digital_object')
       digital_objects_iterator do |_, index|
         FIELDS_OF_INTEREST.fetch(:digital_object).each do |column|
           column = column.clone
@@ -467,7 +471,7 @@ class SpreadsheetBuilder
       end
     end
 
-    if @selected_columns.include?('related_accession')
+    if selected?('related_accession')
       related_accessions_iterator do |_, index|
         FIELDS_OF_INTEREST.fetch(:related_accession).each do |column|
           column = column.clone
@@ -478,7 +482,7 @@ class SpreadsheetBuilder
     end
 
     notes_iterator do |jsonmodel_type, note_type, index|
-      unless @selected_columns.include?("note_#{note_type}")
+      unless selected?("note_#{note_type}")
         next
       end
 
