@@ -17,6 +17,13 @@ class SpreadsheetBulkUpdater
         'top_container' => {'ref' => nil},
       }
     },
+    'digital_object_instance' => {
+      'jsonmodel_type' => 'instance',
+      'instance_type' => 'digital_object',
+      'digital_object' => {
+        'ref' => nil,
+      }
+    },
     'note_multipart' => {
       'jsonmodel_type' => 'note_multipart',
       'subnotes' => [],
@@ -77,6 +84,12 @@ class SpreadsheetBulkUpdater
         create_missing_top_containers(top_containers_in_sheet, job)
       end
 
+      # let's make sure we have all the digital objects we care about
+      if subrecord_columns[:digital_object]
+        digital_objects_in_sheet = extract_digital_objects_from_sheet(filename, subrecord_columns[:digital_object])
+        @digital_object_id_to_uri_map = apply_digital_objects_changes(digital_objects_in_sheet, resource_id, job, db)
+      end
+
       batch_rows(filename) do |batch|
         to_process = batch.map{|row| [Integer(row.fetch('id')), row]}.to_h
 
@@ -104,6 +117,7 @@ class SpreadsheetBulkUpdater
 
     subrecord_updates_by_index = {}
     instance_updates_by_index = {}
+    digital_object_updates_by_index = {}
     related_accession_updates_by_index = {}
     lang_material_updates_by_index = {:language_and_script => {}, :note_langmaterial => {}}
 
@@ -151,6 +165,14 @@ class SpreadsheetBulkUpdater
 
           instance_updates_by_index[column.index][column.name.to_s] = clean_value
 
+        # digital objects
+        elsif column.jsonmodel == :digital_object
+          digital_object_updates_by_index[column.index] ||= {}
+
+          clean_value = column.sanitise_incoming_value(value)
+
+          digital_object_updates_by_index[column.index][column.name.to_s] = clean_value
+
         # related accessions
         elsif column.jsonmodel == :related_accession
           related_accession_updates_by_index[column.index] ||= {}
@@ -171,8 +193,8 @@ class SpreadsheetBulkUpdater
 
       record_changed = apply_sub_record_updates(row, ao_json, subrecord_updates_by_index) || record_changed
 
-      unless instance_updates_by_index.empty?
-        record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index) || record_changed
+      unless instance_updates_by_index.empty? && digital_object_updates_by_index.empty?
+        record_changed = apply_instance_updates(row, ao_json, instance_updates_by_index, digital_object_updates_by_index) || record_changed
       end
 
       if SpreadsheetBuilder.related_accessions_enabled?
@@ -632,14 +654,14 @@ class SpreadsheetBulkUpdater
     record_changed
   end
 
-  def apply_instance_updates(row, ao_json, instance_updates_by_index)
+  def apply_instance_updates(row, ao_json, instance_updates_by_index, digital_object_updates_by_index)
     record_changed = false
 
     # handle instance updates
     existing_sub_container_instances = ao_json.instances.select{|instance| instance['instance_type'] != 'digital_object'}
     existing_digital_object_instances = ao_json.instances.select{|instance| instance['instance_type'] == 'digital_object'}
     instances_to_apply = []
-    instances_changed = []
+    instances_changed = false
 
     instance_updates_by_index.each do |index, instance_updates|
       if (existing_subrecord = existing_sub_container_instances.fetch(index, false))
@@ -749,8 +771,95 @@ class SpreadsheetBulkUpdater
       end
     end
 
+    digital_object_instances_to_apply = []
+    digital_object_updates_by_index.each do |index, digital_object_updates|
+      digital_object_id = digital_object_updates['digital_object_id']
+
+      if (existing_subrecord = existing_digital_object_instances.fetch(index, false))
+        if digital_object_updates.all?{|_, value| value.to_s.empty? }
+          if SpreadsheetBulkUpdater.apply_deletes?
+            # DELETE!
+            record_changed = true
+            instances_changed = true
+          else
+            errors << {
+              sheet: SpreadsheetBuilder::SHEET_NAME,
+              column: "instances/#{index}",
+              row: row.row_number,
+              errors: ["Deleting an digital object instance is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+            }
+          end
+
+          next
+        end
+
+        if digital_object_id.to_s.empty?
+          errors << {
+            sheet: SpreadsheetBuilder::SHEET_NAME,
+            column: "digital_object/#{index}/digital_object_id",
+            row: row.row_number,
+            errors: ["Digital Object ID is required"],
+          }
+
+          next
+        else
+          if @digital_object_id_to_uri_map.has_key?(digital_object_id)
+            digital_object_uri = @digital_object_id_to_uri_map.fetch(digital_object_id).fetch(:uri)
+
+            if existing_subrecord.fetch('digital_object').fetch('ref') != digital_object_uri
+              existing_subrecord['digital_object']['ref'] = digital_object_uri
+              instance_changed = true
+            end
+          else
+            errors << {
+              sheet: SpreadsheetBuilder::SHEET_NAME,
+              column: "digital_object/#{index}/digital_object_id",
+              row: row.row_number,
+              errors: ["Digital Object not found for #{digital_object_id}"],
+            }
+          end
+        end
+
+        # did anything change?
+        if instance_changed
+          record_changed = true
+          instances_changed = true
+        end
+
+        # ready to apply
+        digital_object_instances_to_apply << existing_subrecord
+      else
+        if digital_object_updates.values.all?{|v| v.to_s.empty? }
+          # Nothing to do!
+          next
+        end
+
+        record_changed = true
+        instances_changed = true
+
+        if @digital_object_id_to_uri_map.has_key?(digital_object_id)
+          instance_to_create = {
+            'jsonmodel_type' => 'instance',
+            'instance_type' => 'digital_object',
+            'digital_object' => {
+              'ref' => @digital_object_id_to_uri_map.fetch(digital_object_id).fetch(:uri)
+            }
+          }
+
+          digital_object_instances_to_apply << instance_to_create
+        else
+          errors << {
+            sheet: SpreadsheetBuilder::SHEET_NAME,
+            column: "digital_object/#{index}/digital_object_id",
+            row: row.row_number,
+            errors: ["Digital Object not found for #{digital_object_id}"],
+          }
+        end
+      end
+    end
+
     if instances_changed
-      ao_json.instances = instances_to_apply + existing_digital_object_instances
+      ao_json.instances = instances_to_apply + digital_object_instances_to_apply
     end
 
     record_changed
@@ -808,6 +917,20 @@ class SpreadsheetBulkUpdater
     end
   end
 
+  DigitalObjectCandidate = Struct.new(:digital_object_id, :digital_object_title, :digital_object_publish, :file_version_file_uri, :file_version_caption) do
+    def empty?
+      [:digital_object_id, :digital_object_title, :file_version_file_uri, :file_version_caption].all?{|attr| self[attr].nil?}
+    end
+
+    def to_s
+      "#<SpreadsheetBulkUpdater::DigitalObjectCandidate #{self.to_h.inspect}>"
+    end
+
+    def inspect
+      to_s
+    end
+  end
+
   AccessionCandidate = Struct.new(:id_0, :id_1, :id_2, :id_3) do
     def empty?
       id_0.nil? && id_1.nil? && id_2.nil? && id_3.nil?
@@ -839,6 +962,107 @@ class SpreadsheetBulkUpdater
 
       @top_containers_in_resource[candidate_to_create] = tc.uri
     end
+  end
+
+  def apply_digital_objects_changes(in_sheet, resource_id, job, db)
+    identifiers_by_digital_object_id = {}
+
+    # digital_object_id is unique within the repository
+    db[:digital_object]
+    .filter(:repo_id => db[:resource].filter(:id => resource_id).select(:repo_id))
+    .select(:id, :repo_id, :digital_object_id)
+    .each do |row|
+      identifiers_by_digital_object_id[row[:digital_object_id]] = {
+        uri: JSONModel::JSONModel(:digital_object).uri_for(row[:id], :repo_id => row[:repo_id]),
+        id: row[:id]
+      }
+    end
+
+    candidates_for_update = {}
+
+    in_sheet.keys.each do |digital_object_candidate|
+      next if digital_object_candidate.empty?
+
+      if (identifiers_by_digital_object_id.include?(digital_object_candidate.digital_object_id))
+        candidates_for_update[identifiers_by_digital_object_id.fetch(digital_object_candidate.digital_object_id).fetch(:id)] = digital_object_candidate
+      else
+        # Create a new digital object
+        do_json = JSONModel::JSONModel(:digital_object).new #._always_valid!
+        do_json.digital_object_id = digital_object_candidate.digital_object_id
+        do_json.title = digital_object_candidate.digital_object_title
+        do_json.publish = digital_object_candidate.digital_object_publish
+        unless [digital_object_candidate.file_version_file_uri, digital_object_candidate.file_version_caption].all?{|v| v.to_s.empty?}
+          do_json.file_versions = [{
+                                     'jsonmodel_type' => 'file_version',
+                                     'file_uri' => digital_object_candidate.file_version_file_uri,
+                                     'caption' => digital_object_candidate.file_version_caption,
+                                   }]
+        end
+
+        obj = DigitalObject.create_from_json(do_json)
+
+        job.write_output("Created digital object #{do_json.digital_object_id} - #{do_json.title}")
+
+        identifiers_by_digital_object_id[digital_object_candidate.digital_object_id] = {
+          uri: obj.uri,
+          id: obj.id
+        }
+      end
+    end
+
+    unless candidates_for_update.empty?
+      objs = DigitalObject.filter(:id => candidates_for_update.keys).all
+      jsons = DigitalObject.sequel_to_jsonmodel(objs)
+
+      objs.zip(jsons).each do |obj, json|
+        candidate = candidates_for_update.fetch(obj.id)
+        changed = false
+
+        if json.title != candidate.digital_object_title
+          json.title = candidate.digital_object_title
+          changed = true
+        end
+
+        if json.publish != !!candidate.digital_object_publish
+          json.publish = !!candidate.digital_object_publish
+          changed = true
+        end
+
+        has_file_version_values = ![candidate.file_version_file_uri, candidate.file_version_caption].all?{|v| v.to_s.empty?}
+        if (file_version = json.file_versions.first)
+          if has_file_version_values
+            # update the file version
+            if file_version['file_uri'] != candidate.file_version_file_uri
+              file_version['file_uri'] = candidate.file_version_file_uri
+              changed = true
+            end
+
+            if file_version['caption'] != candidate.file_version_caption
+              file_version['caption'] = candidate.file_version_caption
+              changed = true
+            end
+          else
+            # delete the file version!
+            json.file_versions.delete_at(0)
+            changed = true
+          end
+        elsif has_file_version_values
+          json.file_versions << {
+            'jsonmodel_type' => 'file_version',
+            'file_uri' => candidate.file_version_file_uri,
+            'caption' => candidate.file_version_caption,
+          }
+          changed = true
+        end
+
+        if changed
+          obj.update_from_json(json)
+          job.write_output("Updated digital object #{json.digital_object_id} - #{json.title}")
+        end
+      end
+    end
+
+    identifiers_by_digital_object_id
   end
 
   def find_subrecord_columns(column_by_path)
@@ -874,6 +1098,25 @@ class SpreadsheetBulkUpdater
     end
 
     top_containers
+  end
+
+  def extract_digital_objects_from_sheet(filename, digital_object_columns)
+    digital_objects = {}
+
+    each_row(filename) do |row|
+      next if row.empty?
+      by_index = {}
+      digital_object_columns.each do |path, column|
+        by_index[column.index] ||= DigitalObjectCandidate.new
+        by_index[column.index][column.name] = column.sanitise_incoming_value(row.fetch(path))
+      end
+
+      by_index.values.reject(&:empty?).each do |digital_object|
+        digital_objects[digital_object] = nil
+      end
+    end
+
+    digital_objects
   end
 
   def extract_accessions_from_sheet(db, filename, related_accession_columns)

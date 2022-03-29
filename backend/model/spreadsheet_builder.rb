@@ -118,13 +118,12 @@ class SpreadsheetBuilder
   end
 
   class EnumColumn < StringColumn
-    attr_accessor :enum_name, :skip_values, :override_values
+    attr_accessor :enum_name, :skip_values
 
     def initialize(jsonmodel, name, enum_name, opts = {})
       super(jsonmodel, name, {:column => "#{name}_id"}.merge(opts))
       @enum_name = enum_name
       @skip_values = opts.fetch(:skip_enum_values, [])
-      @override_values = opts.fetch(:override_values, [])
     end
 
     def value_for(enum_id)
@@ -142,6 +141,8 @@ class SpreadsheetBuilder
     end
 
     def sanitise_incoming_value(value)
+      return nil if value.to_s.empty?
+
       value == 'true'
     end
   end
@@ -588,7 +589,7 @@ class SpreadsheetBuilder
           subrecord_datasets[:digital_object][row[:archival_object_id]] << {
             :digital_object_id => row[:digital_object_id],
             :digital_object_title => row[:digital_object_title],
-            :digital_object_publish => row[:digital_object_publish],
+            :digital_object_publish => row[:digital_object_publish] == 1,
             :file_version_file_uri => row[:file_version_file_uri],
             :file_version_caption => row[:file_version_caption],
           }
@@ -713,11 +714,8 @@ class SpreadsheetBuilder
             else
               subrecord_data = subrecord_datasets.fetch(column.jsonmodel, {}).fetch(row[:id], []).fetch(column.index, nil)
               if subrecord_data
-                if (value = subrecord_data.fetch(column.name, nil))
-                  current_row << ColumnAndValue.new(column.value_for(value), column)
-                else
-                  current_row << ColumnAndValue.new(nil, column)
-                end
+                # FIXME should do this? current_row << ColumnAndValue.new(column.value_for(value), column)
+                current_row << ColumnAndValue.new(subrecord_data.fetch(column.name, nil), column)
               else
                 current_row << ColumnAndValue.new(nil, column)
               end
@@ -796,7 +794,7 @@ class SpreadsheetBuilder
     all_columns.each_with_index do |column, col_index|
       if column.is_a?(EnumColumn)
         enum_sheet.write(0, col_index, column.enum_name)
-        enum_values = column.override_values.empty? ? BackendEnumSource.values_for(column.enum_name) : column.override_values
+        enum_values = BackendEnumSource.values_for(column.enum_name)
         enum_values.reject!{|value| column.skip_values.include?(value)}
         enum_values
           .map{|value| EnumMapper.enum_to_spreadsheet_value(value, column.enum_name)}
