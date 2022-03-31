@@ -87,7 +87,7 @@ class SpreadsheetBulkUpdater
       # let's make sure we have all the digital objects we care about
       if subrecord_columns[:digital_object]
         digital_objects_in_sheet = extract_digital_objects_from_sheet(filename, subrecord_columns[:digital_object])
-        @digital_object_id_to_uri_map = apply_digital_objects_changes(digital_objects_in_sheet, resource_id, job, db)
+        @digital_object_id_to_uri_map = apply_digital_objects_changes(digital_objects_in_sheet, job, db)
       end
 
       batch_rows(filename) do |batch|
@@ -964,12 +964,16 @@ class SpreadsheetBulkUpdater
     end
   end
 
-  def apply_digital_objects_changes(in_sheet, resource_id, job, db)
+  def apply_digital_objects_changes(in_sheet, job, db)
     identifiers_by_digital_object_id = {}
 
-    # digital_object_id is unique within the repository
+    # NOTE: digital_object_id is unique within the repository!
+    #
+    # Check if any of the digital objects referenced in the spreadsheet
+    # already exist.
+    candidate_ids = in_sheet.keys.map{|candidate| candidate.digital_object_id}.uniq.compact
     db[:digital_object]
-    .filter(:repo_id => db[:resource].filter(:id => resource_id).select(:repo_id))
+    .filter(:digital_object_id => candidate_ids)
     .select(:id, :repo_id, :digital_object_id)
     .each do |row|
       identifiers_by_digital_object_id[row[:digital_object_id]] = {
@@ -983,10 +987,13 @@ class SpreadsheetBulkUpdater
     in_sheet.keys.each do |digital_object_candidate|
       next if digital_object_candidate.empty?
 
-      if (identifiers_by_digital_object_id.include?(digital_object_candidate.digital_object_id))
+      if identifiers_by_digital_object_id.include?(digital_object_candidate.digital_object_id)
+        # Digital object exists for this digital_object_id! So stash it and we'll
+        # check it for changes in a moment...
         candidates_for_update[identifiers_by_digital_object_id.fetch(digital_object_candidate.digital_object_id).fetch(:id)] = digital_object_candidate
       else
-        # Create a new digital object
+        # No digital object exists with this digital_object_id,
+        # so we better create a new one.
         do_json = JSONModel::JSONModel(:digital_object).new #._always_valid!
         do_json.digital_object_id = digital_object_candidate.digital_object_id
         do_json.title = digital_object_candidate.digital_object_title
@@ -1011,53 +1018,60 @@ class SpreadsheetBulkUpdater
     end
 
     unless candidates_for_update.empty?
-      objs = DigitalObject.filter(:id => candidates_for_update.keys).all
-      jsons = DigitalObject.sequel_to_jsonmodel(objs)
+      # Batch update the digital objects
+      candidates_for_update.keys.each_slice(BATCH_SIZE) do |batch|
+        objs = DigitalObject.filter(:id => batch).all
+        jsons = DigitalObject.sequel_to_jsonmodel(objs)
 
-      objs.zip(jsons).each do |obj, json|
-        candidate = candidates_for_update.fetch(obj.id)
-        changed = false
+        objs.zip(jsons).each do |obj, json|
+          candidate = candidates_for_update.fetch(obj.id)
 
-        if json.title != candidate.digital_object_title
-          json.title = candidate.digital_object_title
-          changed = true
-        end
+          # We only want to update the digital object if we're sure the
+          # spreadsheet contains changes. So double check the record's
+          # existing values before firing an update.
+          changed = false
 
-        if json.publish != !!candidate.digital_object_publish
-          json.publish = !!candidate.digital_object_publish
-          changed = true
-        end
-
-        has_file_version_values = ![candidate.file_version_file_uri, candidate.file_version_caption].all?{|v| v.to_s.empty?}
-        if (file_version = json.file_versions.first)
-          if has_file_version_values
-            # update the file version
-            if file_version['file_uri'] != candidate.file_version_file_uri
-              file_version['file_uri'] = candidate.file_version_file_uri
-              changed = true
-            end
-
-            if file_version['caption'] != candidate.file_version_caption
-              file_version['caption'] = candidate.file_version_caption
-              changed = true
-            end
-          else
-            # delete the file version!
-            json.file_versions.delete_at(0)
+          if json.title != candidate.digital_object_title
+            json.title = candidate.digital_object_title
             changed = true
           end
-        elsif has_file_version_values
-          json.file_versions << {
-            'jsonmodel_type' => 'file_version',
-            'file_uri' => candidate.file_version_file_uri,
-            'caption' => candidate.file_version_caption,
-          }
-          changed = true
-        end
 
-        if changed
-          obj.update_from_json(json)
-          job.write_output("Updated digital object #{json.digital_object_id} - #{json.title}")
+          if json.publish != !!candidate.digital_object_publish
+            json.publish = !!candidate.digital_object_publish
+            changed = true
+          end
+
+          has_file_version_values = ![candidate.file_version_file_uri, candidate.file_version_caption].all?{|v| v.to_s.empty?}
+          if (file_version = json.file_versions.first)
+            if has_file_version_values
+              # update the file version
+              if file_version['file_uri'] != candidate.file_version_file_uri
+                file_version['file_uri'] = candidate.file_version_file_uri
+                changed = true
+              end
+
+              if file_version['caption'] != candidate.file_version_caption
+                file_version['caption'] = candidate.file_version_caption
+                changed = true
+              end
+            else
+              # delete the file version!
+              json.file_versions.delete_at(0)
+              changed = true
+            end
+          elsif has_file_version_values
+            json.file_versions << {
+              'jsonmodel_type' => 'file_version',
+              'file_uri' => candidate.file_version_file_uri,
+              'caption' => candidate.file_version_caption,
+            }
+            changed = true
+          end
+
+          if changed
+            obj.update_from_json(json)
+            job.write_output("Updated digital object #{json.digital_object_id} - #{json.title}")
+          end
         end
       end
     end
