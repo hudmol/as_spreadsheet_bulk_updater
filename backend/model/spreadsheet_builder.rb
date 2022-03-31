@@ -512,6 +512,8 @@ class SpreadsheetBuilder
 
         subrecord_datasets = {}
         SUBRECORDS_OF_INTEREST.each do |subrecord|
+          next unless selected?(subrecord.to_s)
+
           subrecord_fields = [:archival_object_id] + FIELDS_OF_INTEREST.fetch(subrecord).map{|field| field.column}
 
           subrecord_datasets[subrecord] = {}
@@ -525,78 +527,82 @@ class SpreadsheetBuilder
           end
         end
 
-        # Instances are special
-        db[:instance]
-          .join(:sub_container, Sequel.qualify(:sub_container, :instance_id) => Sequel.qualify(:instance, :id))
-          .join(:top_container_link_rlshp, Sequel.qualify(:top_container_link_rlshp, :sub_container_id) => Sequel.qualify(:sub_container, :id))
-          .join(:top_container, Sequel.qualify(:top_container, :id) => Sequel.qualify(:top_container_link_rlshp, :top_container_id))
-          .filter(Sequel.qualify(:instance, :archival_object_id) => batch)
-          .filter(Sequel.~(Sequel.qualify(:instance, :instance_type_id) => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object')))
-          .select(
-            Sequel.as(Sequel.qualify(:instance, :archival_object_id), :archival_object_id),
-            Sequel.as(Sequel.qualify(:instance, :instance_type_id), :instance_type_id),
-            Sequel.as(Sequel.qualify(:top_container, :type_id), :top_container_type_id),
-            Sequel.as(Sequel.qualify(:top_container, :indicator), :top_container_indicator),
-            Sequel.as(Sequel.qualify(:top_container, :barcode), :top_container_barcode),
-            Sequel.as(Sequel.qualify(:sub_container, :type_2_id), :sub_container_type_2_id),
-            Sequel.as(Sequel.qualify(:sub_container, :indicator_2), :sub_container_indicator_2),
-            Sequel.as(Sequel.qualify(:sub_container, :barcode_2), :sub_container_barcode_2),
-            Sequel.as(Sequel.qualify(:sub_container, :type_3_id), :sub_container_type_3_id),
-            Sequel.as(Sequel.qualify(:sub_container, :indicator_3), :sub_container_indicator_3),
-          ).each do |row|
-          subrecord_datasets[:instance] ||= {}
-          subrecord_datasets[:instance][row[:archival_object_id]] ||= []
-          subrecord_datasets[:instance][row[:archival_object_id]] << {
-            :instance_type => EnumMapper.enum_id_to_spreadsheet_value(row[:instance_type_id], 'instance_instance_type'),
-            :top_container_type => EnumMapper.enum_id_to_spreadsheet_value(row[:top_container_type_id], 'container_type'),
-            :top_container_indicator => row[:top_container_indicator],
-            :top_container_barcode => row[:top_container_barcode],
-            :sub_container_type_2 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_2_id], 'container_type'),
-            :sub_container_indicator_2 => row[:sub_container_indicator_2],
-            :sub_container_barcode_2 => row[:sub_container_barcode_2],
-            :sub_container_type_3 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_3_id], 'container_type'),
-            :sub_container_indicator_3 => row[:sub_container_indicator_3],
-          }
+        if selected?('instance')
+          # Instances are special
+          db[:instance]
+            .join(:sub_container, Sequel.qualify(:sub_container, :instance_id) => Sequel.qualify(:instance, :id))
+            .join(:top_container_link_rlshp, Sequel.qualify(:top_container_link_rlshp, :sub_container_id) => Sequel.qualify(:sub_container, :id))
+            .join(:top_container, Sequel.qualify(:top_container, :id) => Sequel.qualify(:top_container_link_rlshp, :top_container_id))
+            .filter(Sequel.qualify(:instance, :archival_object_id) => batch)
+            .filter(Sequel.~(Sequel.qualify(:instance, :instance_type_id) => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object')))
+            .select(
+              Sequel.as(Sequel.qualify(:instance, :archival_object_id), :archival_object_id),
+              Sequel.as(Sequel.qualify(:instance, :instance_type_id), :instance_type_id),
+              Sequel.as(Sequel.qualify(:top_container, :type_id), :top_container_type_id),
+              Sequel.as(Sequel.qualify(:top_container, :indicator), :top_container_indicator),
+              Sequel.as(Sequel.qualify(:top_container, :barcode), :top_container_barcode),
+              Sequel.as(Sequel.qualify(:sub_container, :type_2_id), :sub_container_type_2_id),
+              Sequel.as(Sequel.qualify(:sub_container, :indicator_2), :sub_container_indicator_2),
+              Sequel.as(Sequel.qualify(:sub_container, :barcode_2), :sub_container_barcode_2),
+              Sequel.as(Sequel.qualify(:sub_container, :type_3_id), :sub_container_type_3_id),
+              Sequel.as(Sequel.qualify(:sub_container, :indicator_3), :sub_container_indicator_3),
+            ).each do |row|
+            subrecord_datasets[:instance] ||= {}
+            subrecord_datasets[:instance][row[:archival_object_id]] ||= []
+            subrecord_datasets[:instance][row[:archival_object_id]] << {
+              :instance_type => EnumMapper.enum_id_to_spreadsheet_value(row[:instance_type_id], 'instance_instance_type'),
+              :top_container_type => EnumMapper.enum_id_to_spreadsheet_value(row[:top_container_type_id], 'container_type'),
+              :top_container_indicator => row[:top_container_indicator],
+              :top_container_barcode => row[:top_container_barcode],
+              :sub_container_type_2 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_2_id], 'container_type'),
+              :sub_container_indicator_2 => row[:sub_container_indicator_2],
+              :sub_container_barcode_2 => row[:sub_container_barcode_2],
+              :sub_container_type_3 => EnumMapper.enum_id_to_spreadsheet_value(row[:sub_container_type_3_id], 'container_type'),
+              :sub_container_indicator_3 => row[:sub_container_indicator_3],
+            }
+          end
         end
 
-        # Digital Object Instances
-        #
-        # - only support editing one file version per digital object
-        #   (or one row per digital object instance)
-        seen_file_versions = {}
-        db[:instance]
-          .join(:instance_do_link_rlshp, Sequel.qualify(:instance_do_link_rlshp, :instance_id) => Sequel.qualify(:instance, :id))
-          .join(:digital_object, Sequel.qualify(:digital_object, :id) => Sequel.qualify(:instance_do_link_rlshp, :digital_object_id))
-          .left_join(:file_version, Sequel.qualify(:file_version, :digital_object_id) => Sequel.qualify(:digital_object, :id))
-          .filter(Sequel.qualify(:instance, :archival_object_id) => batch)
-          .filter(Sequel.qualify(:instance, :instance_type_id) => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object'))
-          .select(
-            Sequel.as(Sequel.qualify(:instance, :archival_object_id), :archival_object_id),
-            Sequel.as(Sequel.qualify(:instance_do_link_rlshp, :id), :rlshp_id),
-            Sequel.as(Sequel.qualify(:digital_object, :digital_object_id), :digital_object_id),
-            Sequel.as(Sequel.qualify(:digital_object, :title), :digital_object_title),
-            Sequel.as(Sequel.qualify(:digital_object, :publish), :digital_object_publish),
-            Sequel.as(Sequel.qualify(:file_version, :id), :file_version_id),
-            Sequel.as(Sequel.qualify(:file_version, :file_uri), :file_version_file_uri),
-            Sequel.as(Sequel.qualify(:file_version, :caption), :file_version_caption),
-            ).each do |row|
-          next if seen_file_versions.fetch(row[:rlshp_id], false)
+        if selected?('digital_object')
+          # Digital Object Instances
+          #
+          # - only support editing one file version per digital object
+          #   (or one row per digital object instance)
+          seen_file_versions = {}
+          db[:instance]
+            .join(:instance_do_link_rlshp, Sequel.qualify(:instance_do_link_rlshp, :instance_id) => Sequel.qualify(:instance, :id))
+            .join(:digital_object, Sequel.qualify(:digital_object, :id) => Sequel.qualify(:instance_do_link_rlshp, :digital_object_id))
+            .left_join(:file_version, Sequel.qualify(:file_version, :digital_object_id) => Sequel.qualify(:digital_object, :id))
+            .filter(Sequel.qualify(:instance, :archival_object_id) => batch)
+            .filter(Sequel.qualify(:instance, :instance_type_id) => BackendEnumSource.id_for_value('instance_instance_type', 'digital_object'))
+            .select(
+              Sequel.as(Sequel.qualify(:instance, :archival_object_id), :archival_object_id),
+              Sequel.as(Sequel.qualify(:instance_do_link_rlshp, :id), :rlshp_id),
+              Sequel.as(Sequel.qualify(:digital_object, :digital_object_id), :digital_object_id),
+              Sequel.as(Sequel.qualify(:digital_object, :title), :digital_object_title),
+              Sequel.as(Sequel.qualify(:digital_object, :publish), :digital_object_publish),
+              Sequel.as(Sequel.qualify(:file_version, :id), :file_version_id),
+              Sequel.as(Sequel.qualify(:file_version, :file_uri), :file_version_file_uri),
+              Sequel.as(Sequel.qualify(:file_version, :caption), :file_version_caption),
+              ).each do |row|
+            next if seen_file_versions.fetch(row[:rlshp_id], false)
 
-          seen_file_versions[row[:rlshp_id]] = true
+            seen_file_versions[row[:rlshp_id]] = true
 
-          subrecord_datasets[:digital_object] ||= {}
-          subrecord_datasets[:digital_object][row[:archival_object_id]] ||= []
-          subrecord_datasets[:digital_object][row[:archival_object_id]] << {
-            :digital_object_id => row[:digital_object_id],
-            :digital_object_title => row[:digital_object_title],
-            :digital_object_publish => row[:digital_object_publish] == 1,
-            :file_version_file_uri => row[:file_version_file_uri],
-            :file_version_caption => row[:file_version_caption],
-          }
+            subrecord_datasets[:digital_object] ||= {}
+            subrecord_datasets[:digital_object][row[:archival_object_id]] ||= []
+            subrecord_datasets[:digital_object][row[:archival_object_id]] << {
+              :digital_object_id => row[:digital_object_id],
+              :digital_object_title => row[:digital_object_title],
+              :digital_object_publish => row[:digital_object_publish] == 1,
+              :file_version_file_uri => row[:file_version_file_uri],
+              :file_version_caption => row[:file_version_caption],
+            }
+          end
         end
 
         # Related Accessions are special
-        if SpreadsheetBuilder.related_accessions_enabled?
+        if SpreadsheetBuilder.related_accessions_enabled? && selected?('related_accession')
           db[:accession_component_links_rlshp]
             .join(:accession, Sequel.qualify(:accession, :id) => Sequel.qualify(:accession_component_links_rlshp, :accession_id))
             .filter(Sequel.qualify(:accession_component_links_rlshp, :archival_object_id) => batch)
@@ -617,35 +623,37 @@ class SpreadsheetBuilder
           end
         end
 
-        # lang_material specialness
-        db[:lang_material]
-          .join(:language_and_script, Sequel.qualify(:language_and_script, :lang_material_id) => Sequel.qualify(:lang_material, :id))
-          .filter(Sequel.qualify(:lang_material, :archival_object_id) => batch)
-          .select(Sequel.qualify(:lang_material, :archival_object_id),
-                  Sequel.qualify(:language_and_script, :language_id),
-                  Sequel.qualify(:language_and_script, :script_id))
-          .each do |row|
-          subrecord_datasets[:language_and_script] ||= {}
-          subrecord_datasets[:language_and_script][row[:archival_object_id]] ||= []
-          subrecord_datasets[:language_and_script][row[:archival_object_id]] << {
-            :language => row[:language_id] ? EnumMapper.enum_id_to_spreadsheet_value(row[:language_id], 'language_iso639_2') : nil,
-            :script => row[:script_id] ? EnumMapper.enum_id_to_spreadsheet_value(row[:script_id], 'script_iso15924') : nil,
-          }
-        end
+        if selected?('langmaterial')
+          # lang_material specialness
+          db[:lang_material]
+            .join(:language_and_script, Sequel.qualify(:language_and_script, :lang_material_id) => Sequel.qualify(:lang_material, :id))
+            .filter(Sequel.qualify(:lang_material, :archival_object_id) => batch)
+            .select(Sequel.qualify(:lang_material, :archival_object_id),
+                    Sequel.qualify(:language_and_script, :language_id),
+                    Sequel.qualify(:language_and_script, :script_id))
+            .each do |row|
+            subrecord_datasets[:language_and_script] ||= {}
+            subrecord_datasets[:language_and_script][row[:archival_object_id]] ||= []
+            subrecord_datasets[:language_and_script][row[:archival_object_id]] << {
+              :language => row[:language_id] ? EnumMapper.enum_id_to_spreadsheet_value(row[:language_id], 'language_iso639_2') : nil,
+              :script => row[:script_id] ? EnumMapper.enum_id_to_spreadsheet_value(row[:script_id], 'script_iso15924') : nil,
+            }
+          end
 
-        db[:lang_material]
-          .join(:note, Sequel.qualify(:note, :lang_material_id) => Sequel.qualify(:lang_material, :id))
-          .filter(Sequel.qualify(:lang_material, :archival_object_id) => batch)
-          .select(Sequel.qualify(:lang_material, :archival_object_id),
-                  Sequel.qualify(:note, :notes))
-          .each do |row|
-          note_json = ASUtils.json_parse(row[:notes])
+          db[:lang_material]
+            .join(:note, Sequel.qualify(:note, :lang_material_id) => Sequel.qualify(:lang_material, :id))
+            .filter(Sequel.qualify(:lang_material, :archival_object_id) => batch)
+            .select(Sequel.qualify(:lang_material, :archival_object_id),
+                    Sequel.qualify(:note, :notes))
+            .each do |row|
+            note_json = ASUtils.json_parse(row[:notes])
 
-          subrecord_datasets[:note_langmaterial] ||= {}
-          subrecord_datasets[:note_langmaterial][row[:archival_object_id]] ||= []
-          subrecord_datasets[:note_langmaterial][row[:archival_object_id]] << {
-            :content => Array(note_json['content']).first,
-          }
+            subrecord_datasets[:note_langmaterial] ||= {}
+            subrecord_datasets[:note_langmaterial][row[:archival_object_id]] ||= []
+            subrecord_datasets[:note_langmaterial][row[:archival_object_id]] << {
+              :content => Array(note_json['content']).first,
+            }
+          end
         end
 
         # Notes
@@ -659,6 +667,7 @@ class SpreadsheetBuilder
           note_type = note_json.fetch('type').intern
 
           next unless (MULTIPART_NOTES_OF_INTEREST + SINGLEPART_NOTES_OF_INTEREST).include?(note_type)
+          next unless selected?("note_#{note_type}")
 
           subrecord_datasets[note_type] ||= {}
           subrecord_datasets[note_type][row[:archival_object_id]] ||= []
