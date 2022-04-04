@@ -17,13 +17,6 @@ class SpreadsheetBulkUpdater
         'top_container' => {'ref' => nil},
       }
     },
-    'digital_object_instance' => {
-      'jsonmodel_type' => 'instance',
-      'instance_type' => 'digital_object',
-      'digital_object' => {
-        'ref' => nil,
-      }
-    },
     'note_multipart' => {
       'jsonmodel_type' => 'note_multipart',
       'subnotes' => [],
@@ -657,6 +650,13 @@ class SpreadsheetBulkUpdater
   def apply_instance_updates(row, ao_json, instance_updates_by_index, digital_object_updates_by_index)
     record_changed = false
 
+    last_used_index = ao_json.instances.length
+
+    # store something to help retain instance sort order
+    ao_json.instances.each_with_index do |instance, index|
+      instance['_sort_'] = index
+    end
+
     # handle instance updates
     existing_sub_container_instances = ao_json.instances.select{|instance| instance['instance_type'] != 'digital_object'}
     existing_digital_object_instances = ao_json.instances.select{|instance| instance['instance_type'] == 'digital_object'}
@@ -746,6 +746,9 @@ class SpreadsheetBulkUpdater
         instance_to_create = SUBRECORD_DEFAULTS.fetch('instance').merge(
           INSTANCE_FIELD_MAPPINGS.map{|target_field, spreadsheet_field| [target_field, instance_updates[spreadsheet_field]]}.to_h
         )
+
+        last_used_index += 1
+        instance_to_create['_sort_'] = last_used_index
 
         instance_to_create['sub_container'].merge!(
           SUB_CONTAINER_FIELD_MAPPINGS.map{|target_field, spreadsheet_field| [target_field, instance_updates[spreadsheet_field]]}.to_h
@@ -846,6 +849,9 @@ class SpreadsheetBulkUpdater
             }
           }
 
+          last_used_index += 1
+          instance_to_create['_sort_'] = last_used_index
+
           digital_object_instances_to_apply << instance_to_create
         else
           errors << {
@@ -859,7 +865,7 @@ class SpreadsheetBulkUpdater
     end
 
     if instances_changed
-      ao_json.instances = instances_to_apply + digital_object_instances_to_apply
+      ao_json.instances = (instances_to_apply + digital_object_instances_to_apply).sort_by{|instance| instance['_sort_']}.map{|instance| instance.delete('_sort_'); instance}
     end
 
     record_changed
@@ -1014,6 +1020,8 @@ class SpreadsheetBulkUpdater
           uri: obj.uri,
           id: obj.id
         }
+
+        updated_uris << obj.uri
       end
     end
 
@@ -1071,6 +1079,7 @@ class SpreadsheetBulkUpdater
           if changed
             obj.update_from_json(json)
             job.write_output("Updated digital object #{json.digital_object_id} - #{json.title}")
+            updated_uris << obj.uri
           end
         end
       end
