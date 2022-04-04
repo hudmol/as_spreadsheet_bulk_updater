@@ -251,6 +251,12 @@ class SpreadsheetBulkUpdater
     else
       clean_value = column.sanitise_incoming_value(value)
 
+      # component_id is tricky as it has a default value of "", so we need to
+      # assume nil is actually "".
+      if path == 'component_id' && clean_value.nil?
+        clean_value = ''
+      end
+
       if ao_json[path] != clean_value
         record_changed = true
         ao_json[path] = clean_value
