@@ -194,6 +194,7 @@ class SpreadsheetBuilder
       BooleanColumn.new(:digital_object, :digital_object_publish, :i18n => "Publish?"),
       StringColumn.new(:digital_object, :file_version_file_uri, :i18n => "File URI"),
       StringColumn.new(:digital_object, :file_version_caption, :i18n => "File Caption"),
+      BooleanColumn.new(:digital_object, :file_version_publish, :i18n => "File Publish?"),
     ],
     :related_accession => [
       StringColumn.new(:related_accession, :id_0, :property_name => :related_accessions, :i18n => 'ID Part 1'),
@@ -584,6 +585,7 @@ class SpreadsheetBuilder
               Sequel.as(Sequel.qualify(:file_version, :id), :file_version_id),
               Sequel.as(Sequel.qualify(:file_version, :file_uri), :file_version_file_uri),
               Sequel.as(Sequel.qualify(:file_version, :caption), :file_version_caption),
+              Sequel.as(Sequel.qualify(:file_version, :publish), :file_version_publish),
               ).each do |row|
             next if seen_file_versions.fetch(row[:rlshp_id], false)
 
@@ -594,9 +596,10 @@ class SpreadsheetBuilder
             subrecord_datasets[:digital_object][row[:archival_object_id]] << {
               :digital_object_id => row[:digital_object_id],
               :digital_object_title => row[:digital_object_title],
-              :digital_object_publish => row[:digital_object_publish] == 1,
+              :digital_object_publish => (row[:digital_object_publish] == 1).to_s,
               :file_version_file_uri => row[:file_version_file_uri],
               :file_version_caption => row[:file_version_caption],
+              :file_version_publish => (row[:file_version_publish] == 1).to_s,
             }
           end
         end

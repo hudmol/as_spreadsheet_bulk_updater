@@ -929,9 +929,9 @@ class SpreadsheetBulkUpdater
     end
   end
 
-  DigitalObjectCandidate = Struct.new(:digital_object_id, :digital_object_title, :digital_object_publish, :file_version_file_uri, :file_version_caption) do
+  DigitalObjectCandidate = Struct.new(:digital_object_id, :digital_object_title, :digital_object_publish, :file_version_file_uri, :file_version_caption, :file_version_publish) do
     def empty?
-      [:digital_object_id, :digital_object_title, :file_version_file_uri, :file_version_caption].all?{|attr| self[attr].nil?}
+      [:digital_object_id, :digital_object_title, :digital_object_publish, :file_version_file_uri, :file_version_caption, :file_version_publish].all?{|attr| self[attr].to_s.empty?}
     end
 
     def to_s
@@ -1015,6 +1015,7 @@ class SpreadsheetBulkUpdater
                                      'jsonmodel_type' => 'file_version',
                                      'file_uri' => digital_object_candidate.file_version_file_uri,
                                      'caption' => digital_object_candidate.file_version_caption,
+                                     'publish' => digital_object_candidate.file_version_publish,
                                    }]
         end
 
@@ -1066,6 +1067,11 @@ class SpreadsheetBulkUpdater
 
               if file_version['caption'] != candidate.file_version_caption
                 file_version['caption'] = candidate.file_version_caption
+                changed = true
+              end
+
+              if file_version['publish'] != !!candidate.file_version_publish
+                file_version['publish'] = candidate.file_version_publish
                 changed = true
               end
             else
