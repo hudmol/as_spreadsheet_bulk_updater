@@ -231,6 +231,15 @@ class SpreadsheetBuilder
   ]
 
   EXTRA_NOTE_FIELDS = {
+    :_all_ => [
+      StringColumn.new(:note, :label,
+                       :i18n_proc => proc{|col|
+                         "#{I18n.t('note._singular')} #{I18n.t("enumerations.note_multipart_type.#{col.jsonmodel}", :default => I18n.t("enumerations.note_singlepart_type.#{col.jsonmodel}"))} - #{col.index + 1} - Label"
+                       },
+                       :path_proc => proc{|col|
+                         ['note', col.jsonmodel.to_s, col.index.to_s, col.name.to_s].join('/')
+                       }),
+    ],
     :accessrestrict => [
       DateStringColumn.new(:accessrestrict, :begin, :width => 10,
                            :property_name => :rights_restriction,
@@ -492,14 +501,23 @@ class SpreadsheetBuilder
       column.index = index
       result << column
 
-      EXTRA_NOTE_FIELDS.fetch(note_type, []).each do |extra_column|
+      self.class.extra_note_fields_for_type(note_type).each do |extra_column|
         column = extra_column.clone
         column.index = index
+
         result << column
       end
     end
 
     @columns = result
+  end
+
+  def self.extra_note_fields_for_type(note_type)
+    (EXTRA_NOTE_FIELDS.fetch(:_all_) + EXTRA_NOTE_FIELDS.fetch(note_type, [])).map do |column|
+      col = column.clone
+      col.jsonmodel = note_type
+      col
+    end
   end
 
   def dataset_iterator(&block)
@@ -685,8 +703,9 @@ class SpreadsheetBuilder
             note_data[:content] = Array(note_json['content']).first
           end
 
-          EXTRA_NOTE_FIELDS.fetch(note_type, []).each do |extra_column|
-            value = Array(note_json.fetch(extra_column.property_name.to_s, {}).fetch(extra_column.name.to_s, nil)).first
+          self.class.extra_note_fields_for_type(note_type).each do |extra_column|
+            target_record = extra_column.property_name.to_s == 'note' ? note_json : note_json.fetch(extra_column.property_name.to_s, {})
+            value =  Array(target_record.fetch(extra_column.name.to_s, nil)).first
 
             if extra_column.is_a?(EnumColumn)
               note_data[extra_column.name] = EnumMapper.enum_to_spreadsheet_value(value, extra_column.enum_name)
@@ -871,7 +890,7 @@ class SpreadsheetBuilder
       column = if field == :content
                  NoteContentColumn.new(:note, note_type, note_jsonmodel)
                else
-                 EXTRA_NOTE_FIELDS.fetch(note_type, {}).detect{|col| col.name.intern == field}
+                 self.class.extra_note_fields_for_type(note_type).detect{|col| col.name.intern == field}
                end
 
       raise "Column definition not found for #{path}" unless column
