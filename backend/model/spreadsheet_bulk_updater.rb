@@ -282,9 +282,7 @@ class SpreadsheetBulkUpdater
       # we need to create a new note!
       record_changed = true
 
-      note_to_update = SUBRECORD_DEFAULTS.fetch(note_jsonmodel.to_s, {}).merge({
-                                                                                 'type' => note_type.to_s,
-                                                                               })
+      note_to_update = default_record_values(note_jsonmodel).merge('type' => note_type.to_s)
 
       notes_by_type[note_type][column.index] = note_to_update
       ao_json.notes << note_to_update
@@ -323,10 +321,10 @@ class SpreadsheetBulkUpdater
           record_changed = true
 
           if column.multipart?
-            note_to_update['subnotes'] << SUBRECORD_DEFAULTS.fetch('note_text', {}).merge({
-                                                                                            'jsonmodel_type' => 'note_text',
-                                                                                            'content' => clean_value
-                                                                                          })
+            note_to_update['subnotes'] << default_record_values('note_text').merge({
+                                                                                    'jsonmodel_type' => 'note_text',
+                                                                                    'content' => clean_value
+                                                                                   })
           else
             note_to_update['content'] << clean_value
           end
@@ -351,6 +349,12 @@ class SpreadsheetBulkUpdater
     end
 
     record_changed
+  end
+
+  def default_record_values(jsonmodel_type)
+    return {} unless SUBRECORD_DEFAULTS.has_key?(jsonmodel_type.to_s)
+
+    Marshal.load(Marshal.dump(SUBRECORD_DEFAULTS.fetch(jsonmodel_type.to_s)))
   end
 
   def apply_sub_record_updates(row, ao_json, subrecord_updates_by_index)
@@ -400,7 +404,7 @@ class SpreadsheetBulkUpdater
           end
 
           record_changed = true
-          subrecord_to_create = SUBRECORD_DEFAULTS.fetch(jsonmodel_property.to_s, {}).merge(subrecord_updates)
+          subrecord_to_create = default_record_values(jsonmodel_property).merge(subrecord_updates)
 
           subrecords_to_apply << subrecord_to_create
         end
@@ -749,7 +753,7 @@ class SpreadsheetBulkUpdater
         record_changed = true
         instances_changed = true
 
-        instance_to_create = SUBRECORD_DEFAULTS.fetch('instance').merge(
+        instance_to_create = default_record_values('instance').merge(
           INSTANCE_FIELD_MAPPINGS.map{|target_field, spreadsheet_field| [target_field, instance_updates[spreadsheet_field]]}.to_h
         )
 
@@ -1091,6 +1095,7 @@ class SpreadsheetBulkUpdater
           if changed
             obj.update_from_json(json)
             job.write_output("Updated digital object #{json.digital_object_id} - #{json.title}")
+
             updated_uris << obj.uri
           end
         end
