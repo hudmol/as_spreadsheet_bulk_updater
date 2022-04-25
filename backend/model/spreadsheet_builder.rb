@@ -890,7 +890,7 @@ class SpreadsheetBuilder
       column = if field == :content
                  NoteContentColumn.new(:note, note_type, note_jsonmodel)
                else
-                 self.class.extra_note_fields_for_type(note_type).detect{|col| col.name.intern == field}
+                 extra_note_fields_for_type(note_type).detect{|col| col.name.intern == field}
                end
 
       raise "Column definition not found for #{path}" unless column
@@ -950,5 +950,12 @@ class SpreadsheetBuilder
 
   def self.related_accessions_enabled?
     Object.const_defined?('ComponentAccessionLinks') && ArchivalObject.included_modules.include?(ComponentAccessionLinks)
+  end
+
+  def self.note_jsonmodel_for_type(note_type)
+    return 'note_multipart' if MULTIPART_NOTES_OF_INTEREST.include?(note_type.intern)
+    return 'note_singlepart' if SINGLEPART_NOTES_OF_INTEREST.include?(note_type.intern)
+
+    raise "Note type not supported: #{note_type}"
   end
 end

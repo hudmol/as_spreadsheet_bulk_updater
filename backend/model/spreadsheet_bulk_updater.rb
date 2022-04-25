@@ -127,19 +127,15 @@ class SpreadsheetBulkUpdater
           record_changed = apply_archival_object_column(row, column, path, value, ao_json) || record_changed
 
           # notes
-        elsif column.is_a?(SpreadsheetBuilder::NoteContentColumn) || SpreadsheetBuilder::EXTRA_NOTE_FIELDS.has_key?(column.jsonmodel)
-          note_type = nil
-          note_jsonmodel = nil
+        elsif path.start_with?('note/')
+          if path =~ /note\/([a-z_-]+)\/.*/
+            note_type = $1
+            note_jsonmodel = SpreadsheetBuilder.note_jsonmodel_for_type(note_type)
 
-          if column.is_a?(SpreadsheetBuilder::NoteContentColumn)
-            note_type = column.name
-            note_jsonmodel = column.note_jsonmodel
-          elsif SpreadsheetBuilder::EXTRA_NOTE_FIELDS.has_key?(column.jsonmodel)
-            note_type = column.jsonmodel
-            note_jsonmodel = SpreadsheetBuilder::MULTIPART_NOTES_OF_INTEREST.include?(note_type) ? 'note_multipart' : 'note_singlepart'
+            record_changed = apply_notes_column(row, column, value, ao_json, notes_by_type, note_jsonmodel, note_type) || record_changed
+          else
+            raise "note column path doesn't comply with note/{note_type}/{field}: #{path}"
           end
-
-          record_changed = apply_notes_column(row, column, value, ao_json, notes_by_type, note_jsonmodel, note_type) || record_changed
 
           # subrecords
         elsif SpreadsheetBuilder::SUBRECORDS_OF_INTEREST.include?(column.jsonmodel)
@@ -204,6 +200,7 @@ class SpreadsheetBulkUpdater
       if record_changed
         ao_json['position'] = nil
         ao.update_from_json(ao_json)
+
         job.write_output("Updated archival object #{ao.id} - #{ao_json.display_string}")
         updated_uris << ao_json['uri']
       end
@@ -332,9 +329,14 @@ class SpreadsheetBulkUpdater
 
       # Update the extra note field
       else
-        # FIXME Assuming the column property name gives the path on the note
-        note_to_update[column.property_name.to_s] ||= {}
-        note_path_to_update = note_to_update[column.property_name.to_s]
+        note_path_to_update = nil
+        if column.property_name.to_s == 'note'
+          note_path_to_update =  note_to_update
+        else
+          # column property name gives the path to a nested record on the note
+          note_to_update[column.property_name.to_s] ||= {}
+          note_path_to_update =  note_to_update[column.property_name.to_s]
+        end
 
         if column.name.to_s == 'local_access_restriction_type'
           # this is an array!
