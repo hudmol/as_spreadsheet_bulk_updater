@@ -935,7 +935,11 @@ class SpreadsheetBulkUpdater
 
   DigitalObjectCandidate = Struct.new(:digital_object_id, :digital_object_title, :digital_object_publish, :file_version_file_uri, :file_version_caption, :file_version_publish) do
     def empty?
-      [:digital_object_id, :digital_object_title, :digital_object_publish, :file_version_file_uri, :file_version_caption, :file_version_publish].all?{|attr| self[attr].to_s.empty?}
+      members.all?{|attr| self[attr].to_s.empty?}
+    end
+
+    def link_only?
+      !self.digital_object_id.to_s.empty? && (members - [:digital_object_id]).all?{|attr| self[attr].to_s.empty?}
     end
 
     def to_s
@@ -1001,9 +1005,15 @@ class SpreadsheetBulkUpdater
     candidates_for_update = {}
 
     in_sheet.keys.each do |digital_object_candidate|
+      # no values! move on...
       next if digital_object_candidate.empty?
 
-      if identifiers_by_digital_object_id.include?(digital_object_candidate.digital_object_id)
+      digital_object_exists = identifiers_by_digital_object_id.include?(digital_object_candidate.digital_object_id)
+
+      # allow linking to a digital object with its ID alone i.e. no updates!
+      next if digital_object_candidate.link_only? && digital_object_exists
+
+      if digital_object_exists
         # Digital object exists for this digital_object_id! So stash it and we'll
         # check it for changes in a moment...
         candidates_for_update[identifiers_by_digital_object_id.fetch(digital_object_candidate.digital_object_id).fetch(:id)] = digital_object_candidate
