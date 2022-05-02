@@ -97,7 +97,7 @@ class SpreadsheetBulkUpdaterController < ApplicationController
 
 
   def load_tree
-    JSONModel::HTTP::get_json(@uri + "/small_tree")
+    JSONModel::HTTP::get_json("/plugins/spreadsheet_bulk_updater#{@uri}/small_tree")
   end
 
 

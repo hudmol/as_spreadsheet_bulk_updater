@@ -1,8 +1,6 @@
-<%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/work_order.css" %>
+<%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/bulk_updater.css" %>
 <%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/fattable.css" %>
 <%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/fattable.js" %>
-
-<%= stylesheet_link_tag "#{AppConfig[:frontend_prefix]}assets/bulk_updater.css" %>
 <%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/bulk_updater.js" %>
 
 <div class="record-pane">
@@ -21,9 +19,9 @@
     <strong>Selected Records:</strong> <span id="selectedCount"></span>
   </p>
 
-  <div id='work_order_table'></div>
+  <div id='bulk_updater_table'></div>
 
-  <%= form_tag({:action => :download}, {:method => 'post', :id => "work_order_form"}) do %>
+  <%= form_tag({:action => :download}, {:method => 'post', :id => "bulk_updater_form"}) do %>
     <%= hidden_field_tag "resource", @uri %>
     <div class="report-fields"></div>
 
@@ -171,10 +169,10 @@
   <% end %>
 </div>
 
-<%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/work_order_table.js" %>
+<%= javascript_include_tag "#{AppConfig[:frontend_prefix]}assets/bulk_updater_table.js" %>
 <script>
-  initWorkOrderTable(<%= ASUtils.to_json(@tree).html_safe %>);
-  new SpreadsheetBuilderForm('work_order_form');
+  initBulkUpdaterTable(<%= ASUtils.to_json(@tree).html_safe %>);
+  new SpreadsheetBuilderForm('bulk_updater_form');
 </script>
 
 <script type="javascript/template" id="downloadPopupContent">

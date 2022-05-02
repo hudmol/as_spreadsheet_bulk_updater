@@ -78,15 +78,21 @@ existing note, a new note will be created.
 
 ## Prerequisites
 
-This plugin relies on the `digitization_work_order` plugin being enabled,
-available here:
-
-    https://github.com/hudmol/digitization_work_order.
+### MySQL
 
 A MySQL database is also required.  For instructions on how to setup MySQL and
 ArchivesSpace please see:
 
     https://archivesspace.github.io/tech-docs/provisioning/mysql.html
+
+### `v1.4.x` and under: `digitization_work_order` plugin
+
+**This prerequisite was dropped as of release `v1.5.0`.**
+
+For all releases up to and and including `v1.4.x`, this plugin relies on the 
+`digitization_work_order` plugin being enabled, available here:
+
+    https://github.com/hudmol/digitization_work_order.
 
 ## Installation
 

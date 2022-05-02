@@ -30,4 +30,14 @@ class ArchivesSpaceService < Sinatra::Base
     ]
   end
 
+  Endpoint.get('/plugins/spreadsheet_bulk_updater/repositories/:repo_id/resources/:id/small_tree')
+          .description("Generate the archival object tree for a resource")
+          .params(["repo_id", :repo_id],
+                  ["id", :id])
+          .permissions([:view_repository])
+          .returns([200, ""]) \
+  do
+    json_response(BulkUpdaterSmallTree.for_resource(params[:id]))
+  end
+
 end
