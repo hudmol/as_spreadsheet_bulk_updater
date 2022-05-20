@@ -337,7 +337,7 @@ class SpreadsheetBuilder
         .select(:archival_object_id, :notes)
         .each do |row|
         note_json = JSON.parse(row[:notes])
-        note_type = note_json.fetch('type')
+        note_type = note_json.fetch('type', 'NOT_SUPPORTED')
 
         notes_max_counts[note_type] ||= 0
         notes_max_counts[note_type] += 1
@@ -685,7 +685,7 @@ class SpreadsheetBuilder
           .each do |row|
           note_json = ASUtils.json_parse(row[:notes])
 
-          note_type = note_json.fetch('type').intern
+          note_type = note_json.fetch('type', 'NOT_SUPPORTED').intern
 
           next unless (MULTIPART_NOTES_OF_INTEREST + SINGLEPART_NOTES_OF_INTEREST).include?(note_type)
           next unless selected?("note_#{note_type}")
