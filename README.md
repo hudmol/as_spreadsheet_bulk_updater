@@ -157,6 +157,7 @@ Here are some thoughts about what could be added in future versions:
 -  ~~Provide some control over the rules for how many subrecords are exported~~
 -  Provide a direct link to create the import job
 -  Provide a way to soft lock the resource to stop others editing it while you fiddle with the spreadsheet
--  Think about rationalizing the dependency on the digitization work order plugin
+-  ~~Think about rationalizing the dependency on the digitization work order plugin~~
 -  ~~Fix bugs! We know you're in there~~
+-  Think about adding support for publishing notes
 -  Fix more bugs!
