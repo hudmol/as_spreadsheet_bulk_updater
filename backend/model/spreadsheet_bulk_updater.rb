@@ -915,7 +915,6 @@ class SpreadsheetBulkUpdater
   def extract_ao_ids(filename)
     result = []
     each_row(filename) do |row|
-      next if row.empty?
       result << Integer(row.fetch('id'))
     end
     result
@@ -1137,7 +1136,6 @@ class SpreadsheetBulkUpdater
     top_containers = {}
 
     each_row(filename) do |row|
-      next if row.empty?
       by_index = {}
       top_container_columns.each do |path, column|
         by_index[column.index] ||= TopContainerCandidate.new
@@ -1156,7 +1154,6 @@ class SpreadsheetBulkUpdater
     digital_objects = {}
 
     each_row(filename) do |row|
-      next if row.empty?
       by_index = {}
       digital_object_columns.each do |path, column|
         by_index[column.index] ||= DigitalObjectCandidate.new
@@ -1175,8 +1172,6 @@ class SpreadsheetBulkUpdater
     accessions = {}
 
     each_row(filename) do |row|
-      next if row.empty?
-
       by_index = {}
       related_accession_columns.each do |path, column|
         by_index[column.index] ||= AccessionCandidate.new
@@ -1289,7 +1284,11 @@ class SpreadsheetBulkUpdater
       elsif idx == 1
         headers = row_values(row)
       else
-        yield Row.new(headers.zip(row_values(row)).to_h, idx + 1)
+        values = row_values(row)
+
+        next if values.all?{|v| v.nil?}
+
+        yield Row.new(headers.zip(values).to_h, idx + 1)
       end
     end
   end
