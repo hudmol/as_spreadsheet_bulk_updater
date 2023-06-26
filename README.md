@@ -43,7 +43,10 @@ Subrecords:
 * Language and Script
 
 Related records:
-* Related Accessions (if you're using the [as_accession_links](https://github.com/hudmol/as_accession_links) plugin)
+* Related Accessions
+    (if you're using the [as_accession_links](https://github.com/hudmol/as_accession_links) plugin,
+     or are running AS v3.3.0 or newer - when this plugin was integrated into the core)
+
 
 The spreadsheet contains grouped columns for each existing subrecord plus at
 least 3 empty sets (by default) to allow creation of new subrecords on the
