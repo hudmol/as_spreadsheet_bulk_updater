@@ -50,11 +50,18 @@
           ].each do |value, label_key|
           %>
           <tr>
+            <% no_acc_link = value == 'update_select_related_accession' && !JSONModel(:archival_object).schema.dig('properties', 'accession_links') %>
+
             <td class="checkbox-cell">
-              <input id="<%= value %>" name="<%= value %>" type="checkbox" checked="checked">
+              <input id="<%= value %>" name="<%= value %>" type="checkbox" <%= no_acc_link ? 'disabled="disabled"' : 'checked="checked"' %>>
             </td>
             <td class="label-cell">
               <label for="<%= value %>"><%= I18n.t(label_key) %></label>
+
+              <% if no_acc_link %>
+                (Requires ArchivesSpace version 3.3.0 or greater, or this <a href="https://github.com/hudmol/as_accession_links">plugin</a>)
+              <% end %>
+
             </td>
           </tr>
           <% end %>
