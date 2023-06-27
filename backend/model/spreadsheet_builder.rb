@@ -949,7 +949,7 @@ class SpreadsheetBuilder
   end
 
   def self.related_accessions_enabled?
-    ArchivalObject.relationships.include?(Relationships::ArchivalObjectAccessionComponentLinks)
+    Object.const_defined?('Relationships::ArchivalObjectAccessionComponentLinks') && ArchivalObject.relationships.include?(Relationships::ArchivalObjectAccessionComponentLinks)
   end
 
   def self.note_jsonmodel_for_type(note_type)
