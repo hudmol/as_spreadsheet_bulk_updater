@@ -675,59 +675,108 @@ class SpreadsheetBulkUpdater
     instances_to_apply = []
     instances_changed = false
 
-    instance_updates_by_index.each do |index, instance_updates|
-      if (existing_subrecord = existing_sub_container_instances.fetch(index, false))
-        if instance_updates.all?{|_, value| value.to_s.empty? }
-          if SpreadsheetBulkUpdater.apply_deletes?
-            # DELETE!
-            record_changed = true
-            instances_changed = true
-          else
-            errors << {
-              sheet: SpreadsheetBuilder::SHEET_NAME,
-              column: "instances/#{index}",
-              row: row.row_number,
-              errors: ["Deleting an instance is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
-            }
+    if instance_updates_by_index.empty?
+      # no changes, so keep the existing instances please
+      instances_to_apply = existing_sub_container_instances
+    else
+      instance_updates_by_index.each do |index, instance_updates|
+        if (existing_subrecord = existing_sub_container_instances.fetch(index, false))
+          if instance_updates.all?{|_, value| value.to_s.empty? }
+            if SpreadsheetBulkUpdater.apply_deletes?
+              # DELETE!
+              record_changed = true
+              instances_changed = true
+            else
+              errors << {
+                sheet: SpreadsheetBuilder::SHEET_NAME,
+                column: "instances/#{index}",
+                row: row.row_number,
+                errors: ["Deleting an instance is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+              }
+            end
+
+            next
           end
 
-          next
-        end
+          instance_changed = false
 
-        instance_changed = false
-
-        # instance fields
-        INSTANCE_FIELD_MAPPINGS.each do |instance_field, spreadsheet_field|
-          if existing_subrecord[instance_field] != instance_updates[spreadsheet_field]
-            instance_changed = true
-            existing_subrecord[instance_field] = instance_updates[spreadsheet_field]
+          # instance fields
+          INSTANCE_FIELD_MAPPINGS.each do |instance_field, spreadsheet_field|
+            if existing_subrecord[instance_field] != instance_updates[spreadsheet_field]
+              instance_changed = true
+              existing_subrecord[instance_field] = instance_updates[spreadsheet_field]
+            end
           end
-        end
 
-        # sub_container fields
-        SUB_CONTAINER_FIELD_MAPPINGS.each do |sub_container_field, spreadsheet_field|
-          if existing_subrecord.fetch('sub_container')[sub_container_field] != instance_updates[spreadsheet_field]
-            existing_subrecord.fetch('sub_container')[sub_container_field] = instance_updates[spreadsheet_field]
-            instance_changed = true
-          end
-        end
-
-        # the top container
-        candidate_top_container = TopContainerCandidate.new(instance_updates['top_container_type'],
-                                                            instance_updates['top_container_indicator'],
-                                                            instance_updates['top_container_barcode'])
-
-        if candidate_top_container.empty?
-          # assume this was intentional and let validation do its thing
-          existing_subrecord['sub_container']['top_container']['ref'] = nil
-        else
-          if @top_containers_in_resource.has_key?(candidate_top_container)
-            top_container_uri = @top_containers_in_resource.fetch(candidate_top_container)
-
-            if existing_subrecord.fetch('sub_container').fetch('top_container').fetch('ref') != top_container_uri
-              existing_subrecord['sub_container']['top_container']['ref'] = top_container_uri
+          # sub_container fields
+          SUB_CONTAINER_FIELD_MAPPINGS.each do |sub_container_field, spreadsheet_field|
+            if existing_subrecord.fetch('sub_container')[sub_container_field] != instance_updates[spreadsheet_field]
+              existing_subrecord.fetch('sub_container')[sub_container_field] = instance_updates[spreadsheet_field]
               instance_changed = true
             end
+          end
+
+          # the top container
+          candidate_top_container = TopContainerCandidate.new(instance_updates['top_container_type'],
+                                                              instance_updates['top_container_indicator'],
+                                                              instance_updates['top_container_barcode'])
+
+          if candidate_top_container.empty?
+            # assume this was intentional and let validation do its thing
+            existing_subrecord['sub_container']['top_container']['ref'] = nil
+          else
+            if @top_containers_in_resource.has_key?(candidate_top_container)
+              top_container_uri = @top_containers_in_resource.fetch(candidate_top_container)
+
+              if existing_subrecord.fetch('sub_container').fetch('top_container').fetch('ref') != top_container_uri
+                existing_subrecord['sub_container']['top_container']['ref'] = top_container_uri
+                instance_changed = true
+              end
+            else
+              errors << {
+                sheet: SpreadsheetBuilder::SHEET_NAME,
+                column: "instances/#{index}/top_container_indicator",
+                row: row.row_number,
+                errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container, @top_containers_in_resource)],
+              }
+            end
+          end
+
+          # did anything change?
+          if instance_changed
+            record_changed = true
+            instances_changed = true
+          end
+
+          # ready to apply
+          instances_to_apply << existing_subrecord
+        else
+          if instance_updates.values.all?{|v| v.to_s.empty? }
+            # Nothing to do!
+            next
+          end
+
+          record_changed = true
+          instances_changed = true
+
+          instance_to_create = default_record_values('instance').merge(
+            INSTANCE_FIELD_MAPPINGS.map{|target_field, spreadsheet_field| [target_field, instance_updates[spreadsheet_field]]}.to_h
+          )
+
+          last_used_index += 1
+          instance_to_create['_sort_'] = last_used_index
+
+          instance_to_create['sub_container'].merge!(
+            SUB_CONTAINER_FIELD_MAPPINGS.map{|target_field, spreadsheet_field| [target_field, instance_updates[spreadsheet_field]]}.to_h
+          )
+
+          candidate_top_container = TopContainerCandidate.new(instance_updates['top_container_type'],
+                                                              instance_updates['top_container_indicator'],
+                                                              instance_updates['top_container_barcode'])
+
+          if @top_containers_in_resource.has_key?(candidate_top_container)
+            top_container_uri = @top_containers_in_resource.fetch(candidate_top_container)
+            instance_to_create['sub_container']['top_container'] = {'ref' => top_container_uri}
           else
             errors << {
               sheet: SpreadsheetBuilder::SHEET_NAME,
@@ -736,95 +785,96 @@ class SpreadsheetBulkUpdater
               errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container, @top_containers_in_resource)],
             }
           end
+
+          instances_to_apply << instance_to_create
         end
-
-        # did anything change?
-        if instance_changed
-          record_changed = true
-          instances_changed = true
-        end
-
-        # ready to apply
-        instances_to_apply << existing_subrecord
-      else
-        if instance_updates.values.all?{|v| v.to_s.empty? }
-          # Nothing to do!
-          next
-        end
-
-        record_changed = true
-        instances_changed = true
-
-        instance_to_create = default_record_values('instance').merge(
-          INSTANCE_FIELD_MAPPINGS.map{|target_field, spreadsheet_field| [target_field, instance_updates[spreadsheet_field]]}.to_h
-        )
-
-        last_used_index += 1
-        instance_to_create['_sort_'] = last_used_index
-
-        instance_to_create['sub_container'].merge!(
-          SUB_CONTAINER_FIELD_MAPPINGS.map{|target_field, spreadsheet_field| [target_field, instance_updates[spreadsheet_field]]}.to_h
-        )
-
-        candidate_top_container = TopContainerCandidate.new(instance_updates['top_container_type'],
-                                                            instance_updates['top_container_indicator'],
-                                                            instance_updates['top_container_barcode'])
-
-        if @top_containers_in_resource.has_key?(candidate_top_container)
-          top_container_uri = @top_containers_in_resource.fetch(candidate_top_container)
-          instance_to_create['sub_container']['top_container'] = {'ref' => top_container_uri}
-        else
-          errors << {
-            sheet: SpreadsheetBuilder::SHEET_NAME,
-            column: "instances/#{index}/top_container_indicator",
-            row: row.row_number,
-            errors: [SpreadsheetBulkUpdater.missing_container_error(candidate_top_container, @top_containers_in_resource)],
-          }
-        end
-
-        instances_to_apply << instance_to_create
       end
     end
 
     digital_object_instances_to_apply = []
-    digital_object_updates_by_index.each do |index, digital_object_updates|
-      digital_object_id = digital_object_updates['digital_object_id']
 
-      if (existing_subrecord = existing_digital_object_instances.fetch(index, false))
-        if digital_object_updates.all?{|_, value| value.to_s.empty? }
-          if SpreadsheetBulkUpdater.apply_deletes?
-            # DELETE!
-            record_changed = true
-            instances_changed = true
-          else
-            errors << {
-              sheet: SpreadsheetBuilder::SHEET_NAME,
-              column: "instances/#{index}",
-              row: row.row_number,
-              errors: ["Deleting an digital object instance is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
-            }
+    if digital_object_updates_by_index.empty?
+      # no changes, so keep the existing instances please
+      digital_object_instances_to_apply = existing_digital_object_instances
+    else
+      digital_object_updates_by_index.each do |index, digital_object_updates|
+        digital_object_id = digital_object_updates['digital_object_id']
+
+        if (existing_subrecord = existing_digital_object_instances.fetch(index, false))
+          if digital_object_updates.all?{|_, value| value.to_s.empty? }
+            if SpreadsheetBulkUpdater.apply_deletes?
+              # DELETE!
+              record_changed = true
+              instances_changed = true
+            else
+              errors << {
+                sheet: SpreadsheetBuilder::SHEET_NAME,
+                column: "instances/#{index}",
+                row: row.row_number,
+                errors: ["Deleting an digital object instance is disabled. Use AppConfig[:spreadsheet_bulk_updater_apply_deletes] = true to enable."],
+              }
+            end
+
+            next
           end
 
-          next
-        end
+          if digital_object_id.to_s.empty?
+            errors << {
+              sheet: SpreadsheetBuilder::SHEET_NAME,
+              column: "digital_object/#{index}/digital_object_id",
+              row: row.row_number,
+              errors: ["Digital Object ID is required"],
+            }
 
-        if digital_object_id.to_s.empty?
-          errors << {
-            sheet: SpreadsheetBuilder::SHEET_NAME,
-            column: "digital_object/#{index}/digital_object_id",
-            row: row.row_number,
-            errors: ["Digital Object ID is required"],
-          }
+            next
+          else
+            if @digital_object_id_to_uri_map.has_key?(digital_object_id)
+              digital_object_uri = @digital_object_id_to_uri_map.fetch(digital_object_id).fetch(:uri)
 
-          next
-        else
-          if @digital_object_id_to_uri_map.has_key?(digital_object_id)
-            digital_object_uri = @digital_object_id_to_uri_map.fetch(digital_object_id).fetch(:uri)
-
-            if existing_subrecord.fetch('digital_object').fetch('ref') != digital_object_uri
-              existing_subrecord['digital_object']['ref'] = digital_object_uri
-              instance_changed = true
+              if existing_subrecord.fetch('digital_object').fetch('ref') != digital_object_uri
+                existing_subrecord['digital_object']['ref'] = digital_object_uri
+                instance_changed = true
+              end
+            else
+              errors << {
+                sheet: SpreadsheetBuilder::SHEET_NAME,
+                column: "digital_object/#{index}/digital_object_id",
+                row: row.row_number,
+                errors: ["Digital Object not found for #{digital_object_id}"],
+              }
             end
+          end
+
+          # did anything change?
+          if instance_changed
+            record_changed = true
+            instances_changed = true
+          end
+
+          # ready to apply
+          digital_object_instances_to_apply << existing_subrecord
+        else
+          if digital_object_updates.values.all?{|v| v.to_s.empty? }
+            # Nothing to do!
+            next
+          end
+
+          record_changed = true
+          instances_changed = true
+
+          if @digital_object_id_to_uri_map.has_key?(digital_object_id)
+            instance_to_create = {
+              'jsonmodel_type' => 'instance',
+              'instance_type' => 'digital_object',
+              'digital_object' => {
+                'ref' => @digital_object_id_to_uri_map.fetch(digital_object_id).fetch(:uri)
+              }
+            }
+
+            last_used_index += 1
+            instance_to_create['_sort_'] = last_used_index
+
+            digital_object_instances_to_apply << instance_to_create
           else
             errors << {
               sheet: SpreadsheetBuilder::SHEET_NAME,
@@ -833,45 +883,6 @@ class SpreadsheetBulkUpdater
               errors: ["Digital Object not found for #{digital_object_id}"],
             }
           end
-        end
-
-        # did anything change?
-        if instance_changed
-          record_changed = true
-          instances_changed = true
-        end
-
-        # ready to apply
-        digital_object_instances_to_apply << existing_subrecord
-      else
-        if digital_object_updates.values.all?{|v| v.to_s.empty? }
-          # Nothing to do!
-          next
-        end
-
-        record_changed = true
-        instances_changed = true
-
-        if @digital_object_id_to_uri_map.has_key?(digital_object_id)
-          instance_to_create = {
-            'jsonmodel_type' => 'instance',
-            'instance_type' => 'digital_object',
-            'digital_object' => {
-              'ref' => @digital_object_id_to_uri_map.fetch(digital_object_id).fetch(:uri)
-            }
-          }
-
-          last_used_index += 1
-          instance_to_create['_sort_'] = last_used_index
-
-          digital_object_instances_to_apply << instance_to_create
-        else
-          errors << {
-            sheet: SpreadsheetBuilder::SHEET_NAME,
-            column: "digital_object/#{index}/digital_object_id",
-            row: row.row_number,
-            errors: ["Digital Object not found for #{digital_object_id}"],
-          }
         end
       end
     end
