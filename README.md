@@ -1,3 +1,6 @@
+
+    This plugin is being merged with core ArchivesSpace. Development here has stopped
+
 # as_spreadsheet_bulk_updater
 
 An ArchivesSpace plugin for performing bulk updates on Archival Objects.
